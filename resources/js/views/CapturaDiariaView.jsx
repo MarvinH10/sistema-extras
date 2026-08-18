@@ -100,10 +100,10 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       (res.data.areas || []).forEach(area => {
         area.empleados.forEach(emp => {
           const reg = emp.registro;
-          const isSinRestr = Boolean(reg?.sin_restricciones) || reg?.turno_detectado === 'SIN_RESTRICCIONES';
+          const isSinRestr = Boolean(reg?.sin_restricciones);
           initialForm[emp.id] = {
             empleado_id: emp.id,
-            turno_manual: isSinRestr ? 'SIN_RESTRICCIONES' : (reg?.turno_detectado || 'AUTO'),
+            turno_manual: isSinRestr ? 'SIN_RESTRICCIONES' : 'AUTO',
             sin_restricciones: isSinRestr,
             ingreso_1: reg?.ingreso_1 || '',
             salida_1: reg?.salida_1 || '',
@@ -172,8 +172,6 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       if (duracion <= 330) {
         return 'PART_TIME';
       }
-      // Jornada corrida de ~8 horas sin descanso => SIN_RESTRICCIONES
-      return 'SIN_RESTRICCIONES';
     }
 
     // Si ingresa al mediodía / tarde (11:45 en adelante, ej 12:40, 13:00, 16:10) => TARDE

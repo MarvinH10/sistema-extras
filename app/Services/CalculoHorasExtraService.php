@@ -45,13 +45,10 @@ class CalculoHorasExtraService
             }
             $duracion = $totalMinutosSalida - $totalMinutosIngreso;
 
-            // Si es jornada corta (hasta 5h30 / 330 min, ej. ~4 horas) => PART_TIME (4 horas)
+            // Si es jornada corta (hasta 5h30 / 330 min, ej. ~4 horas) => PART_TIME
             if ($duracion <= 330) {
                 return 'PART_TIME';
             }
-
-            // Si es jornada corrida larga (más de 5h30, ej. ~8 horas sin refrigerio) => SIN_RESTRICCIONES (8 horas)
-            return 'SIN_RESTRICCIONES';
         }
 
         // Si ingresa al mediodía / tarde (11:45 en adelante, ej. 12:40, 12:55, 13:00, 16:10) => TARDE

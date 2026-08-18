@@ -153,8 +153,6 @@ export default function MatrizMensualView() {
       if (duracion <= 330) {
         return 'PART_TIME';
       }
-      // Jornada corrida de ~8 horas sin descanso => SIN_RESTRICCIONES
-      return 'SIN_RESTRICCIONES';
     }
 
     // Si ingresa al mediodía / tarde (11:45 en adelante, ej 12:40, 13:00, 16:10) => TARDE
