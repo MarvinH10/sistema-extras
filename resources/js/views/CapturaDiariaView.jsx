@@ -149,14 +149,34 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
   }
 
   // Detección automática en cliente (solo turnos Full Time 8 horas)
+  // Detección automática inteligente en cliente
   function detectarTurnoClient(i1, s1, i2, s2) {
     const i1Min = timeToMinutes(i1);
     if (i1Min === null) return 'TARDE';
 
     const s1Min = timeToMinutes(s1);
     const i2Min = timeToMinutes(i2);
+    const s2Min = timeToMinutes(s2);
 
-    // Si ingresa al mediodía / tarde (11:45 en adelante, ej 12:40, 13:00, 16:10) => TARDE (8 horas)
+    // Si solo tiene entrada y salida (sin descanso intermedio)
+    const salidaCorridaMin = s2Min !== null ? s2Min : s1Min;
+    const soloEntradaSalida = (i1Min !== null && s2Min !== null && s1Min === null && i2Min === null) ||
+                             (i1Min !== null && s1Min !== null && i2Min === null && s2Min === null);
+
+    if (soloEntradaSalida && salidaCorridaMin !== null) {
+      let fin = salidaCorridaMin;
+      if (fin < i1Min) fin += 24 * 60;
+      const duracion = fin - i1Min;
+
+      // Jornada corta (hasta 5h30 / 330 min, ej ~4 horas) => PART_TIME
+      if (duracion <= 330) {
+        return 'PART_TIME';
+      }
+      // Jornada corrida de ~8 horas sin descanso => SIN_RESTRICCIONES
+      return 'SIN_RESTRICCIONES';
+    }
+
+    // Si ingresa al mediodía / tarde (11:45 en adelante, ej 12:40, 13:00, 16:10) => TARDE
     if (i1Min >= 11 * 60 + 45) {
       return 'TARDE';
     }
@@ -210,9 +230,44 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       };
     }
 
-    // CASO PART TIME (4 horas = 240 minutos) - SOLO si se seleccionó explícitamente PART_TIME
-    const isPartTime = turno_manual === 'PART_TIME';
-    if (isPartTime) {
+    // Jornada corrida (solo 2 marcas: entrada y salida sin descanso)
+    const soloEntradaSalida = (i1Total !== null && s2Total !== null && s1Total === null && i2Total === null) ||
+                             (i1Total !== null && s1Total !== null && i2Total === null && s2Total === null);
+
+    if (soloEntradaSalida) {
+      const salidaMin = s2Total !== null ? s2Total : s1Total;
+      let fin = salidaMin;
+      if (fin < i1Total) fin += 24 * 60;
+      const totalTrabajados = Math.max(0, fin - i1Total);
+
+      const esPartTime = (turno_manual === 'PART_TIME') || (turno_manual === 'AUTO' && totalTrabajados <= 330) || (turnoDetectado === 'PART_TIME');
+
+      if (esPartTime) {
+        const totalExtras = totalTrabajados - 240; // 4 horas base
+        return {
+          ...item,
+          calcWorked: totalTrabajados,
+          calcExtra: totalExtras,
+          isIncomplete: false,
+          calcTurno: 'PART_TIME',
+          sin_restricciones: false,
+        };
+      } else {
+        // Jornada corrida larga (~8 horas) => SIN RESTRICCIONES (base 480 min)
+        const totalExtras = totalTrabajados - 480;
+        return {
+          ...item,
+          calcWorked: totalTrabajados,
+          calcExtra: totalExtras,
+          isIncomplete: false,
+          calcTurno: turno_manual !== 'AUTO' ? turno_manual : 'SIN_RESTRICCIONES',
+          sin_restricciones: true,
+        };
+      }
+    }
+
+    // CASO PART TIME EXPLICITO con 4 marcas (o modo forzado)
+    if (turno_manual === 'PART_TIME' || turnoDetectado === 'PART_TIME') {
       const entradaMin = i1Total;
       const salidaMin = s2Total !== null ? s2Total : s1Total;
 
@@ -239,27 +294,6 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
         isIncomplete: false,
         calcTurno: 'PART_TIME',
         sin_restricciones: false,
-      };
-    }
-
-    // Si solo tiene entrada y salida (sin descanso): jornada corrida Full Time (base 480 min = 8 horas)
-    const soloEntradaSalida = (i1Total !== null && s2Total !== null && s1Total === null && i2Total === null) ||
-                             (i1Total !== null && s1Total !== null && i2Total === null && s2Total === null);
-
-    if (soloEntradaSalida) {
-      const salidaMin = s2Total !== null ? s2Total : s1Total;
-      let fin = salidaMin;
-      if (fin < i1Total) fin += 24 * 60;
-      const totalTrabajados = Math.max(0, fin - i1Total);
-      const totalExtras = totalTrabajados - 480; // 8 horas base obligatorias
-
-      return {
-        ...item,
-        calcWorked: totalTrabajados,
-        calcExtra: totalExtras,
-        isIncomplete: false,
-        calcTurno: turnoDetectado,
-        sin_restricciones: isSinRestricciones,
       };
     }
 

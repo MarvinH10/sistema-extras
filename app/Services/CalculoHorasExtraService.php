@@ -17,7 +17,7 @@ class CalculoHorasExtraService
      * @param Carbon|string|null $s1
      * @param Carbon|string|null $i2
      * @param Carbon|string|null $s2
-     * @return string 'TARDE' | 'COMPARTIDO' | 'TODO_EL_DIA' | 'PART_TIME'
+     * @return string 'TARDE' | 'COMPARTIDO' | 'TODO_EL_DIA' | 'PART_TIME' | 'SIN_RESTRICCIONES'
      */
     public function detectarTipoTurno($i1, $s1, $i2, $s2): string
     {
@@ -31,7 +31,30 @@ class CalculoHorasExtraService
         $minIngreso = isset($parts[1]) ? (int) $parts[1] : 0;
         $totalMinutosIngreso = $horaIngreso * 60 + $minIngreso;
 
-        // Si ingresa al mediodía / tarde (11:45 en adelante, ej. 12:40, 12:55, 13:00, 16:10) => TARDE (8 horas)
+        // Si solo hay 2 marcajes (jornada corrida sin descanso intermedio)
+        $salidaCorrida = !empty($s2) ? $s2 : $s1;
+        $soloEntradaSalida = (!empty($i1) && !empty($s2) && empty($s1) && empty($i2)) ||
+                             (!empty($i1) && !empty($s1) && empty($i2) && empty($s2));
+
+        if ($soloEntradaSalida && !empty($salidaCorrida)) {
+            $salidaStr = is_string($salidaCorrida) ? $salidaCorrida : $salidaCorrida->format('H:i');
+            [$sH, $sM] = explode(':', $salidaStr);
+            $totalMinutosSalida = (int) $sH * 60 + (int) $sM;
+            if ($totalMinutosSalida < $totalMinutosIngreso) {
+                $totalMinutosSalida += 24 * 60;
+            }
+            $duracion = $totalMinutosSalida - $totalMinutosIngreso;
+
+            // Si es jornada corta (hasta 5h30 / 330 min, ej. ~4 horas) => PART_TIME (4 horas)
+            if ($duracion <= 330) {
+                return 'PART_TIME';
+            }
+
+            // Si es jornada corrida larga (más de 5h30, ej. ~8 horas sin refrigerio) => SIN_RESTRICCIONES (8 horas)
+            return 'SIN_RESTRICCIONES';
+        }
+
+        // Si ingresa al mediodía / tarde (11:45 en adelante, ej. 12:40, 12:55, 13:00, 16:10) => TARDE
         if ($totalMinutosIngreso >= (11 * 60 + 45)) {
             return 'TARDE';
         }
@@ -68,8 +91,7 @@ class CalculoHorasExtraService
     }
 
     /**
-     * Calcula los minutos trabajados y minutos extras (o déficit) de acuerdo a las reglas de negocio,
-     * detectando automáticamente el turno si no está predefinido o aplicando modo sin restricciones o part time.
+     * Calcula los minutos trabajados y minutos extras (o déficit) de acuerdo a las reglas de negocio.
      */
     public function calcular(
         ?Turno $turno,
@@ -113,26 +135,32 @@ class CalculoHorasExtraService
 
         $tipoNombre = $turno ? strtoupper(trim($turno->nombre)) : null;
 
-        // CASO PART TIME (SOLO si se especificó explícitamente en turno_manual o contrato)
+        // Jornada corrida (solo 2 marcajes: entrada y salida sin break intermedio)
         $salidaPartTime = !empty($salida2) ? $salida2 : $salida1;
+        $soloEntradaSalida = (!empty($ingreso1) && !empty($salida2) && empty($salida1) && empty($ingreso2)) ||
+                             (!empty($ingreso1) && !empty($salida1) && empty($ingreso2) && empty($salida2));
 
-        if ($tipoNombre === 'PART_TIME') {
-            if (!empty($ingreso1) && !empty($salidaPartTime)) {
-                $dIngreso = Carbon::parse("$fecha $ingreso1");
-                $dSalida = Carbon::parse("$fecha $salidaPartTime");
-                if ($dSalida->lt($dIngreso)) {
-                    $dSalida->addDay();
-                }
+        if ($soloEntradaSalida && !empty($ingreso1) && !empty($salidaPartTime)) {
+            $dIngreso = Carbon::parse("$fecha $ingreso1");
+            $dSalida = Carbon::parse("$fecha $salidaPartTime");
+            if ($dSalida->lt($dIngreso)) {
+                $dSalida->addDay();
+            }
 
-                $minutosTrabajados = max(0, (int) $dIngreso->diffInMinutes($dSalida, false));
-                $minutosExtra = $minutosTrabajados - self::JORNADA_PART_TIME_MINUTOS;
+            $minutosTrabajados = max(0, (int) $dIngreso->diffInMinutes($dSalida, false));
+
+            // Si se especificó explícitamente PART_TIME o se detecta automáticamente por duración <= 5h30 (330 min)
+            $esPartTime = ($tipoNombre === 'PART_TIME') || ($tipoNombre === null && $minutosTrabajados <= 330);
+
+            if ($esPartTime) {
+                $minutosExtra = $minutosTrabajados - self::JORNADA_PART_TIME_MINUTOS; // Base 240 min (4h)
 
                 return [
                     'minutos_trabajados' => $minutosTrabajados,
                     'minutos_extra' => $minutosExtra,
                     'incompleto' => false,
                     'es_descanso' => false,
-                    'sin_restricciones' => $sinRestricciones,
+                    'sin_restricciones' => false,
                     'turno_detectado' => 'PART_TIME',
                     'turno_id' => $turno?->id ?? null,
                     'detalles' => [
@@ -144,51 +172,27 @@ class CalculoHorasExtraService
                     ],
                 ];
             } else {
+                // Jornada corrida larga de ~8 horas sin descanso => SIN_RESTRICCIONES (Base 480 min / 8h)
+                $minutosExtra = $minutosTrabajados - self::JORNADA_MINUTOS;
+                $tipoDetectado = $tipoNombre ?: 'SIN_RESTRICCIONES';
+
                 return [
-                    'minutos_trabajados' => null,
-                    'minutos_extra' => null,
-                    'incompleto' => true,
+                    'minutos_trabajados' => $minutosTrabajados,
+                    'minutos_extra' => $minutosExtra,
+                    'incompleto' => false,
                     'es_descanso' => false,
-                    'sin_restricciones' => $sinRestricciones,
-                    'turno_detectado' => 'PART_TIME',
+                    'sin_restricciones' => true,
+                    'turno_detectado' => $tipoDetectado,
+                    'turno_id' => $turno?->id ?? null,
                     'detalles' => [
-                        'mensaje' => 'Marcaje Part Time incompleto',
+                        'tipo_turno' => $tipoDetectado,
+                        'modo' => 'Jornada corrida sin descanso (Base 8 horas / 480 min)',
+                        'ingreso' => $dIngreso->format('H:i'),
+                        'salida' => $dSalida->format('H:i'),
+                        'minutos_trabajados' => $minutosTrabajados,
                     ],
                 ];
             }
-        }
-
-        // Jornada corrida de trabajador Full Time (solo 2 marcajes: entrada y salida sin break registrado)
-        $soloEntradaSalida = (!empty($ingreso1) && !empty($salida2) && empty($salida1) && empty($ingreso2)) ||
-                             (!empty($ingreso1) && !empty($salida1) && empty($ingreso2) && empty($salida2));
-
-        if ($soloEntradaSalida) {
-            $dIngreso = Carbon::parse("$fecha $ingreso1");
-            $dSalida = Carbon::parse("$fecha $salidaPartTime");
-            if ($dSalida->lt($dIngreso)) {
-                $dSalida->addDay();
-            }
-
-            $minutosTrabajados = max(0, (int) $dIngreso->diffInMinutes($dSalida, false));
-            $minutosExtra = $minutosTrabajados - self::JORNADA_MINUTOS; // Base obligatoria de 8 horas (480 min)
-            $tipoDetectado = $tipoNombre ?: $this->detectarTipoTurno($ingreso1, null, null, $salidaPartTime);
-
-            return [
-                'minutos_trabajados' => $minutosTrabajados,
-                'minutos_extra' => $minutosExtra,
-                'incompleto' => false,
-                'es_descanso' => false,
-                'sin_restricciones' => $sinRestricciones,
-                'turno_detectado' => $tipoDetectado,
-                'turno_id' => $turno?->id ?? null,
-                'detalles' => [
-                    'tipo_turno' => $tipoDetectado,
-                    'modo' => 'Jornada corrida Full Time (8 horas / 480 min)',
-                    'ingreso' => $dIngreso->format('H:i'),
-                    'salida' => $dSalida->format('H:i'),
-                    'minutos_trabajados' => $minutosTrabajados,
-                ],
-            ];
         }
 
         // Si faltan algunos marcajes en turnos estándar de 4 marcas
@@ -207,7 +211,7 @@ class CalculoHorasExtraService
             ];
         }
 
-        // Parsear fechas y horas
+        // Parsear fechas y horas para turnos de 4 marcas
         $dIngreso1 = Carbon::parse("$fecha $ingreso1");
         $dSalida1 = Carbon::parse("$fecha $salida1");
         if ($dSalida1->lt($dIngreso1)) {
