@@ -100,10 +100,18 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       (res.data.areas || []).forEach(area => {
         area.empleados.forEach(emp => {
           const reg = emp.registro;
-          const isSinRestr = Boolean(reg?.sin_restricciones);
+          const isSinRestr = Boolean(reg?.sin_restricciones) || reg?.turno_detectado === 'SIN_RESTRICCIONES';
+          
+          let turnoManual = 'AUTO';
+          if (isSinRestr) {
+            turnoManual = 'SIN_RESTRICCIONES';
+          } else if (reg?.turno_detectado) {
+            turnoManual = reg.turno_detectado;
+          }
+
           initialForm[emp.id] = {
             empleado_id: emp.id,
-            turno_manual: isSinRestr ? 'SIN_RESTRICCIONES' : 'AUTO',
+            turno_manual: turnoManual,
             sin_restricciones: isSinRestr,
             ingreso_1: reg?.ingreso_1 || '',
             salida_1: reg?.salida_1 || '',

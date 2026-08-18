@@ -58,6 +58,7 @@ class AsistenciaController extends Controller
                     ] : null,
                     'registro' => $registro ? [
                         'id' => $registro->id,
+                        'turno_id' => $registro->turno_id,
                         'turno_detectado' => $registro->turno_detectado,
                         'ingreso_1' => $registro->ingreso_1 ? substr($registro->ingreso_1, 0, 5) : null,
                         'salida_1' => $registro->salida_1 ? substr($registro->salida_1, 0, 5) : null,
