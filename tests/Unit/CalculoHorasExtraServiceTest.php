@@ -55,17 +55,12 @@ class CalculoHorasExtraServiceTest extends TestCase
 
         $this->assertEquals('COMPARTIDO', $res['turno_detectado']);
         $this->assertFalse($res['incompleto']);
-        // Ingreso computado: 09:00 a 13:33 = 273 min
-        // Retorno computado (mín 5h desde 13:33 = 18:33): 18:33 a 23:40 = 307 min
-        // Total trabajados: 273 + 307 = 580 min
         $this->assertEquals(580, $res['minutos_trabajados']);
         $this->assertEquals(100, $res['minutos_extra']);
     }
 
     public function test_horario_sin_restricciones(): void
     {
-        // Con sin_restricciones = true, 08:50 a 13:33 (283 min) + 16:39 a 23:40 (421 min) = 704 min
-        // Extras: 704 - 480 = +224 min
         $res = $this->service->calcular(null, '2026-08-01', '8:50', '13:33', '16:39', '23:40', false, true);
 
         $this->assertEquals('SIN_RESTRICCIONES', $res['turno_detectado']);
@@ -75,10 +70,23 @@ class CalculoHorasExtraServiceTest extends TestCase
         $this->assertEquals(224, $res['minutos_extra']);
     }
 
-    public function test_turno_part_time_4_horas(): void
+    public function test_turno_full_time_incompleto_menos_de_8_horas_negativo(): void
     {
-        // Avila Cabrera Ñol Mijae: 14:05 a 18:23 (258 min). Base: 240 min (4h). Extras: +18 min.
-        $res = $this->service->calcular(null, '2026-08-01', '14:05', null, null, '18:23');
+        // Trabajadora regular de tarde: 16:10 a 23:35 con break 17:00 a 18:00 (385 min trabajados)
+        // Base: 480 min (8h). Resultado: 385 - 480 = -95 min (negativo / déficit)
+        $res = $this->service->calcular(null, '2026-08-01', '16:10', '17:00', '18:00', '23:35');
+
+        $this->assertEquals('TARDE', $res['turno_detectado']);
+        $this->assertFalse($res['incompleto']);
+        $this->assertEquals(385, $res['minutos_trabajados']);
+        $this->assertEquals(-95, $res['minutos_extra']);
+    }
+
+    public function test_turno_part_time_4_horas_explicito(): void
+    {
+        // Avila Cabrera Ñol Mijae (Turno PART_TIME asignado): 14:05 a 18:23 (258 min). Base: 240 min (4h). Extras: +18 min.
+        $turnoPartTime = new Turno(['nombre' => 'PART_TIME']);
+        $res = $this->service->calcular($turnoPartTime, '2026-08-01', '14:05', null, null, '18:23');
 
         $this->assertEquals('PART_TIME', $res['turno_detectado']);
         $this->assertFalse($res['incompleto']);
