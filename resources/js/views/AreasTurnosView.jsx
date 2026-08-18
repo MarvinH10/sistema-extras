@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAreas, getTurnos } from '../services/api';
-import { Layers, Clock, ShieldCheck, AlertTriangle, Coffee, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Layers, Clock, ShieldCheck, AlertTriangle, Coffee, ArrowRight, CheckCircle2, Zap } from 'lucide-react';
 
 export default function AreasTurnosView() {
   const [areas, setAreas] = useState([]);
@@ -37,10 +37,10 @@ export default function AreasTurnosView() {
       <div className="space-y-4">
         <h3 className="text-base font-bold text-white flex items-center gap-2">
           <Clock className="text-indigo-400" size={18} />
-          Lógica de Cálculo por Tipo de Turno (Jornada Base = 8 Horas / 480 Minutos)
+          Lógica de Cálculo por Tipo de Turno
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* TARDE Card */}
           <div className="glass-panel rounded-2xl p-5 border border-blue-500/30 flex flex-col justify-between relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
@@ -55,11 +55,11 @@ export default function AreasTurnosView() {
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-blue-400 shrink-0 mt-0.5" />
-                  <span><strong>Ingreso:</strong> Si llega $\le$ 13:00 computa <strong>13:00</strong>. Si llega después (ej. 13:05), computa <strong>13:05</strong> (tardanza).</span>
+                  <span><strong>Ingreso:</strong> Si llega &le; 13:00 computa <strong>13:00</strong>. Si llega después (ej. 13:05), computa <strong>13:05</strong> (tardanza).</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Break Fijo:</strong> 60 minutos obligatorios desde Salida 1. Si vuelve antes, se fuerza a 60 min. Si vuelve después, pierde esos minutos.</span>
+                  <span><strong>Break Fijo (1 Hora):</strong> 60 minutos obligatorios desde Salida 1. Si vuelve antes, se exige 1 hora completa. Si vuelve después, se descuenta demora.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
@@ -69,7 +69,8 @@ export default function AreasTurnosView() {
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400">
-              Fórmula: <code className="text-blue-300 font-mono">Sesión1 + Sesión2 - 480m</code>
+              Jornada: <strong>8 Horas (480m)</strong>
+              <div className="font-mono text-blue-300 mt-0.5">Sesión1 + Sesión2 - 480m</div>
             </div>
           </div>
 
@@ -87,21 +88,22 @@ export default function AreasTurnosView() {
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-purple-400 shrink-0 mt-0.5" />
-                  <span><strong>Ingreso:</strong> Si llega $\le$ 09:00 computa <strong>09:00</strong>. Si llega después, se computa hora real.</span>
+                  <span><strong>Mañana (09:00 a 13:00):</strong> Entrada base 09:00. Salida break con corte base a las 13:00 (240 min).</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Break Ventana (5 Horas):</strong> Salida 13:00-14:00. Obligatorio 300 min (5h) de break. Si vuelve antes, se computa $S_1 + 5h$.</span>
+                  <span><strong>Retorno Break (Base 18:00):</strong> Si vuelve &le; 18:00 cuenta desde 18:00. Si vuelve después (ej. 18:01), se descuenta tardanza.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
-                  <span><strong>Salida:</strong> Base 22:00. Cualquier exceso suma minutos extras positivos.</span>
+                  <span><strong>Salida:</strong> Base 22:00. Minutos extras menos minutos de demora = extras finales.</span>
                 </li>
               </ul>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400">
-              Fórmula: <code className="text-purple-300 font-mono">Sesión1 + Sesión2 - 480m</code>
+              Jornada: <strong>8 Horas (480m)</strong>
+              <div className="font-mono text-purple-300 mt-0.5">Sesión1 + Sesión2 - 480m</div>
             </div>
           </div>
 
@@ -119,11 +121,11 @@ export default function AreasTurnosView() {
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Ingreso:</strong> Si llega $\le$ 09:00 computa <strong>09:00</strong>. Si llega después, se computa hora real.</span>
+                  <span><strong>Ingreso:</strong> Si llega &le; 09:00 computa <strong>09:00</strong>. Si llega después, se computa hora real.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Break Fijo:</strong> 60 minutos obligatorios desde Salida 1.</span>
+                  <span><strong>Break Fijo (1 Hora):</strong> 60 minutos obligatorios desde Salida 1.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
@@ -133,7 +135,41 @@ export default function AreasTurnosView() {
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400">
-              Fórmula: <code className="text-amber-300 font-mono">Sesión1 + Sesión2 - 480m</code>
+              Jornada: <strong>8 Horas (480m)</strong>
+              <div className="font-mono text-amber-300 mt-0.5">Sesión1 + Sesión2 - 480m</div>
+            </div>
+          </div>
+
+          {/* PART TIME Card */}
+          <div className="glass-panel rounded-2xl p-5 border border-cyan-500/30 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                  PART TIME
+                </span>
+                <span className="text-xs font-mono text-slate-400">4 Horas Corrida</span>
+              </div>
+              
+              <ul className="space-y-2.5 text-xs text-slate-300">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-cyan-400 shrink-0 mt-0.5" />
+                  <span><strong>Jornada:</strong> 4 horas corridas (240 minutos base). Sin refrigerio intermedio.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Zap size={14} className="text-cyan-400 shrink-0 mt-0.5" />
+                  <span><strong>Auto-detección:</strong> Aplica a colaboradores Part-Time o jornadas corridas de hasta 5h 30m.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>Extras / Déficit:</strong> Si trabaja más de 240m suma extras (+); si trabaja menos, genera déficit (-).</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400">
+              Jornada: <strong>4 Horas (240m)</strong>
+              <div className="font-mono text-cyan-300 mt-0.5">Trabajado - 240m</div>
             </div>
           </div>
         </div>

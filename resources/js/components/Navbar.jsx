@@ -1,7 +1,8 @@
 import React from 'react';
-import { Clock, Calendar, Users, Layers, Calculator, FileSpreadsheet, Sparkles } from 'lucide-react';
+import { Clock, Calendar, Users, Layers, Calculator, FileSpreadsheet, Sparkles, LogOut, User as UserIcon } from 'lucide-react';
+import { logout } from '../services/api';
 
-export default function Navbar({ activeTab, setActiveTab }) {
+export default function Navbar({ activeTab, setActiveTab, currentUser, onLogout }) {
   const navItems = [
     { id: 'diaria', label: 'Planilla Diaria', icon: Calendar, desc: 'Captura por área' },
     { id: 'matriz', label: 'Matriz Mensual', icon: FileSpreadsheet, desc: 'Excel 1-31 días' },
@@ -9,6 +10,19 @@ export default function Navbar({ activeTab, setActiveTab }) {
     { id: 'areas', label: 'Áreas y Turnos', icon: Layers, desc: 'Estructura organizacional' },
     { id: 'calculadora', label: 'Simulador', icon: Calculator, desc: 'Probar reglas en vivo' },
   ];
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // Ignorar
+    } finally {
+      localStorage.removeItem('kdosh_auth_token');
+      localStorage.removeItem('kdosh_user');
+      localStorage.removeItem('kdosh_expires_at');
+      if (onLogout) onLogout();
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 w-full glass-panel border-b border-slate-800/80 shadow-lg">
@@ -39,11 +53,11 @@ export default function Navbar({ activeTab, setActiveTab }) {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 ${
+                  className={'flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs md:text-sm font-medium transition-all duration-200 cursor-pointer ' + (
                     isActive
                       ? 'bg-linear-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-600/30'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                  }`}
+                  )}
                 >
                   <Icon size={16} />
                   <span>{item.label}</span>
@@ -51,6 +65,33 @@ export default function Navbar({ activeTab, setActiveTab }) {
               );
             })}
           </nav>
+
+          {/* User Info & Logout Button */}
+          <div className="flex items-center gap-3">
+            {currentUser && (
+              <div className="flex items-center gap-2.5 pl-3 border-l border-slate-800">
+                <div className="w-8 h-8 rounded-lg bg-linear-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-xs text-white shadow-sm ring-1 ring-indigo-400/40">
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : <UserIcon size={14} />}
+                </div>
+                <div className="hidden md:block text-left">
+                  <div className="text-xs font-bold text-slate-200 leading-tight">
+                    {currentUser.name}
+                  </div>
+                  <div className="text-[10px] text-slate-400 leading-tight font-mono">
+                    {currentUser.email}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  title="Cerrar Sesión"
+                  className="p-2 rounded-lg bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700/60 hover:border-rose-500/40 transition cursor-pointer"
+                >
+                  <LogOut size={15} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>

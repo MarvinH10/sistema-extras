@@ -15,6 +15,7 @@ import {
   Check,
   Coffee,
   Sparkles,
+  Zap,
   Info
 } from 'lucide-react';
 

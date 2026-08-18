@@ -2,11 +2,19 @@
 
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AsistenciaController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\EmpleadoController;
 use App\Http\Controllers\Api\RegistroDiarioController;
 use App\Http\Controllers\Api\ReporteController;
 use App\Http\Controllers\Api\TurnoController;
 use Illuminate\Support\Facades\Route;
+
+// Rutas de Autenticación
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::get('/me', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+});
 
 Route::prefix('areas')->group(function () {
     Route::get('/', [AreaController::class, 'index']);
