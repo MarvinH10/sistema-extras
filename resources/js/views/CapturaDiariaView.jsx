@@ -331,24 +331,40 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       }
 
       // MODO REGLAS ESTÁNDAR (8 horas)
-      const ebH = turnoDetectado === 'TARDE' ? 13 : 9;
-      const ebTotal = ebH * 60;
-      const breakMin = turnoDetectado === 'COMPARTIDO' ? 300 : 60;
-
       if (s2Total < i2Total) {
         s2Total += 24 * 60; // Cruce de medianoche
       }
 
-      // 1. Ingreso efectivo
-      const ingresoEfectivo = i1Total <= ebTotal ? ebTotal : i1Total;
+      let ingresoEfectivo = i1Total;
+      let regresoEfectivo = i2Total;
 
-      // 2. Break efectivo
-      const regresoMinimo = s1Total + breakMin;
-      const regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
+      let sesion1 = 0;
+      let sesion2 = 0;
 
-      // Sesiones
-      const sesion1 = Math.max(0, s1Total - ingresoEfectivo);
-      const sesion2 = Math.max(0, s2Total - regresoEfectivo);
+      if (turnoDetectado === 'COMPARTIDO') {
+        // Mañana: Base 09:00 a 13:00 (tope 13:00 para corte de refrigerio)
+        ingresoEfectivo = i1Total <= 9 * 60 ? 9 * 60 : i1Total;
+        const salidaEfectivaMañana = s1Total >= 13 * 60 ? 13 * 60 : s1Total;
+        sesion1 = Math.max(0, salidaEfectivaMañana - ingresoEfectivo);
+
+        // Tarde: Base 18:00 a 22:00 (si regresa 18:01 cuenta desde 18:01 descontando tardanza)
+        regresoEfectivo = i2Total <= 18 * 60 ? 18 * 60 : i2Total;
+        sesion2 = Math.max(0, s2Total - regresoEfectivo);
+      } else if (turnoDetectado === 'TARDE') {
+        // Base 13:00, break 1h desde salida
+        ingresoEfectivo = i1Total <= 13 * 60 ? 13 * 60 : i1Total;
+        const regresoMinimo = s1Total + 60;
+        regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
+        sesion1 = Math.max(0, s1Total - ingresoEfectivo);
+        sesion2 = Math.max(0, s2Total - regresoEfectivo);
+      } else {
+        // TODO_EL_DIA: Base 09:00, break 1h desde salida
+        ingresoEfectivo = i1Total <= 9 * 60 ? 9 * 60 : i1Total;
+        const regresoMinimo = s1Total + 60;
+        regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
+        sesion1 = Math.max(0, s1Total - ingresoEfectivo);
+        sesion2 = Math.max(0, s2Total - regresoEfectivo);
+      }
 
       const totalTrabajados = sesion1 + sesion2;
       const totalExtras = totalTrabajados - 480;
