@@ -198,8 +198,8 @@ export default function MatrizMensualView() {
       };
     }
 
-    // CASO PART TIME (4 horas = 240 minutos)
-    const isPartTime = turnoDetectado === 'PART_TIME' || turno_nombre === 'PART_TIME';
+    // CASO PART TIME (4 horas = 240 minutos) - SOLO si se seleccionó explícitamente PART_TIME
+    const isPartTime = turno_nombre === 'PART_TIME';
     if (isPartTime) {
       const entradaMin = i1Total;
       const salidaMin = s2Total !== null ? s2Total : s1Total;
@@ -227,6 +227,27 @@ export default function MatrizMensualView() {
         isIncomplete: false,
         calcTurno: 'PART_TIME',
         sin_restricciones: false,
+      };
+    }
+
+    // Si solo tiene entrada y salida (sin descanso): jornada corrida Full Time (base 480 min = 8 horas)
+    const soloEntradaSalida = (i1Total !== null && s2Total !== null && s1Total === null && i2Total === null) ||
+                             (i1Total !== null && s1Total !== null && i2Total === null && s2Total === null);
+
+    if (soloEntradaSalida) {
+      const salidaMin = s2Total !== null ? s2Total : s1Total;
+      let fin = salidaMin;
+      if (fin < i1Total) fin += 24 * 60;
+      const totalTrabajados = Math.max(0, fin - i1Total);
+      const totalExtras = totalTrabajados - 480; // 8 horas base obligatorias
+
+      return {
+        ...item,
+        calcWorked: totalTrabajados,
+        calcExtra: totalExtras,
+        isIncomplete: false,
+        calcTurno: turnoDetectado,
+        sin_restricciones: isSinRestricciones,
       };
     }
 

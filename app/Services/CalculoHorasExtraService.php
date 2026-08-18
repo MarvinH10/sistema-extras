@@ -25,21 +25,13 @@ class CalculoHorasExtraService
             return 'TARDE';
         }
 
-        // Si solo hay 2 marcajes (ingreso y salida corrida, sin break)
-        $soloEntradaSalida = (!empty($i1) && !empty($s2) && empty($s1) && empty($i2)) ||
-                             (!empty($i1) && !empty($s1) && empty($i2) && empty($s2));
-
-        if ($soloEntradaSalida) {
-            return 'PART_TIME';
-        }
-
         $ingreso1Str = is_string($i1) ? $i1 : $i1->format('H:i');
         $parts = explode(':', $ingreso1Str);
         $horaIngreso = (int) $parts[0];
         $minIngreso = isset($parts[1]) ? (int) $parts[1] : 0;
         $totalMinutosIngreso = $horaIngreso * 60 + $minIngreso;
 
-        // Si ingresa al mediodía / tarde (11:45 en adelante, ej. 12:40, 12:55, 13:00, 13:10) => TARDE
+        // Si ingresa al mediodía / tarde (11:45 en adelante, ej. 12:40, 12:55, 13:00, 16:10) => TARDE (8 horas)
         if ($totalMinutosIngreso >= (11 * 60 + 45)) {
             return 'TARDE';
         }
@@ -121,12 +113,10 @@ class CalculoHorasExtraService
 
         $tipoNombre = $turno ? strtoupper(trim($turno->nombre)) : null;
 
-        // CASO PART TIME (o solo 2 marcajes de jornada corrida)
+        // CASO PART TIME (SOLO si se especificó explícitamente en turno_manual o contrato)
         $salidaPartTime = !empty($salida2) ? $salida2 : $salida1;
-        $esMarcajePartTime = !empty($ingreso1) && !empty($salidaPartTime) &&
-            ((empty($salida1) && empty($ingreso2)) || (empty($ingreso2) && empty($salida2)));
 
-        if ($tipoNombre === 'PART_TIME' || ($tipoNombre === null && $esMarcajePartTime)) {
+        if ($tipoNombre === 'PART_TIME') {
             if (!empty($ingreso1) && !empty($salidaPartTime)) {
                 $dIngreso = Carbon::parse("$fecha $ingreso1");
                 $dSalida = Carbon::parse("$fecha $salidaPartTime");
@@ -166,6 +156,39 @@ class CalculoHorasExtraService
                     ],
                 ];
             }
+        }
+
+        // Jornada corrida de trabajador Full Time (solo 2 marcajes: entrada y salida sin break registrado)
+        $soloEntradaSalida = (!empty($ingreso1) && !empty($salida2) && empty($salida1) && empty($ingreso2)) ||
+                             (!empty($ingreso1) && !empty($salida1) && empty($ingreso2) && empty($salida2));
+
+        if ($soloEntradaSalida) {
+            $dIngreso = Carbon::parse("$fecha $ingreso1");
+            $dSalida = Carbon::parse("$fecha $salidaPartTime");
+            if ($dSalida->lt($dIngreso)) {
+                $dSalida->addDay();
+            }
+
+            $minutosTrabajados = max(0, (int) $dIngreso->diffInMinutes($dSalida, false));
+            $minutosExtra = $minutosTrabajados - self::JORNADA_MINUTOS; // Base obligatoria de 8 horas (480 min)
+            $tipoDetectado = $tipoNombre ?: $this->detectarTipoTurno($ingreso1, null, null, $salidaPartTime);
+
+            return [
+                'minutos_trabajados' => $minutosTrabajados,
+                'minutos_extra' => $minutosExtra,
+                'incompleto' => false,
+                'es_descanso' => false,
+                'sin_restricciones' => $sinRestricciones,
+                'turno_detectado' => $tipoDetectado,
+                'turno_id' => $turno?->id ?? null,
+                'detalles' => [
+                    'tipo_turno' => $tipoDetectado,
+                    'modo' => 'Jornada corrida Full Time (8 horas / 480 min)',
+                    'ingreso' => $dIngreso->format('H:i'),
+                    'salida' => $dSalida->format('H:i'),
+                    'minutos_trabajados' => $minutosTrabajados,
+                ],
+            ];
         }
 
         // Si faltan algunos marcajes en turnos estándar de 4 marcas
