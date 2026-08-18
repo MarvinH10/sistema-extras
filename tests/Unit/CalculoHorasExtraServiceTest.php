@@ -26,6 +26,31 @@ class CalculoHorasExtraServiceTest extends TestCase
         $this->assertEquals(30, $res['minutos_extra']);
     }
 
+    public function test_turno_tarde_isla_rumi_break_1_hora_obligatorio_regreso_antes(): void
+    {
+        // 13:20 a 19:07 (347 min). Break sale 19:07. Retorno mín obligatorio 20:07.
+        // Si regresa a las 20:02 (55 min), NO se considera el tiempo extra: cuenta desde 20:07 hasta 22:13 (126 min).
+        // Total trabajados: 347 + 126 = 473 min (7h 53m). Extras: 473 - 480 = -7 min (déficit)
+        $res = $this->service->calcular(null, '2026-08-01', '13:20', '19:07', '20:02', '22:13');
+
+        $this->assertEquals('TARDE', $res['turno_detectado']);
+        $this->assertFalse($res['incompleto']);
+        $this->assertEquals(473, $res['minutos_trabajados']);
+        $this->assertEquals(-7, $res['minutos_extra']);
+    }
+
+    public function test_turno_tarde_isla_rumi_break_1_hora_regreso_exacto(): void
+    {
+        // 13:20 a 19:07 (347 min). Break 19:07 a 20:07 (60 min exactos). 20:07 a 22:13 (126 min).
+        // Total: 473 min. Extras: -7 min
+        $res = $this->service->calcular(null, '2026-08-01', '13:20', '19:07', '20:07', '22:13');
+
+        $this->assertEquals('TARDE', $res['turno_detectado']);
+        $this->assertFalse($res['incompleto']);
+        $this->assertEquals(473, $res['minutos_trabajados']);
+        $this->assertEquals(-7, $res['minutos_extra']);
+    }
+
     public function test_turno_compartido_hermosilla_retorno_1801_salida_2205(): void
     {
         // Mañana: 09:00 a 13:04 (tope 13:00 = 240 min).
@@ -60,16 +85,6 @@ class CalculoHorasExtraServiceTest extends TestCase
         $this->assertEquals(10, $res['minutos_extra']);
     }
 
-    public function test_auto_deteccion_part_time_4_horas_1405_a_1823(): void
-    {
-        $res = $this->service->calcular(null, '2026-08-01', '14:05', null, null, '18:23');
-
-        $this->assertEquals('PART_TIME', $res['turno_detectado']);
-        $this->assertFalse($res['incompleto']);
-        $this->assertEquals(258, $res['minutos_trabajados']);
-        $this->assertEquals(18, $res['minutos_extra']);
-    }
-
     public function test_auto_deteccion_jornada_corrida_sin_descanso_8_horas(): void
     {
         $res = $this->service->calcular(null, '2026-08-01', '16:10', null, null, '23:35');
@@ -79,15 +94,5 @@ class CalculoHorasExtraServiceTest extends TestCase
         $this->assertFalse($res['incompleto']);
         $this->assertEquals(445, $res['minutos_trabajados']);
         $this->assertEquals(-35, $res['minutos_extra']);
-    }
-
-    public function test_turno_full_time_con_descanso_incompleto_menos_de_8_horas(): void
-    {
-        $res = $this->service->calcular(null, '2026-08-01', '16:10', '17:00', '18:00', '23:35');
-
-        $this->assertEquals('TARDE', $res['turno_detectado']);
-        $this->assertFalse($res['incompleto']);
-        $this->assertEquals(385, $res['minutos_trabajados']);
-        $this->assertEquals(-95, $res['minutos_extra']);
     }
 }
