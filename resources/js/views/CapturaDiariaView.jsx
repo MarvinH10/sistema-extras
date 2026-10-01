@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getAsistenciaDiaria, guardarAsistenciasLote, getAreas, reordenarEmpleados } from '../services/api';
+import { esHorarioNuevo, horarioPara, etiquetaTurno, rangoTurno, marcajesPreset } from '../services/horarios';
 import TimeInput from '../components/TimeInput';
 import {
   Calendar as CalendarIcon,
@@ -192,7 +193,8 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       let durBreak = i2Min - s1Min;
       if (durBreak < 0) durBreak += 24 * 60;
 
-      if (durBreak >= 120) {
+      const breakMin = esHorarioNuevo(fecha) ? 120 : 180;
+      if (durBreak >= breakMin) {
         return 'COMPARTIDO';
       }
       return 'TODO_EL_DIA';
@@ -347,15 +349,20 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       let sesion1 = 0;
       let sesion2 = 0;
 
+      const h = horarioPara(fecha);
+
       if (turnoDetectado === 'COMPARTIDO') {
-        // Mañana: Base 10:00 a 13:00 (tope 13:00 para corte de refrigerio = 180 min)
-        ingresoEfectivo = i1Total <= 10 * 60 ? 10 * 60 : i1Total;
-        const salidaEfectivaMañana = s1Total >= 13 * 60 ? 13 * 60 : s1Total;
+        // Mañana: tope en la salida base para corte de refrigerio
+        ingresoEfectivo = i1Total <= h.ENTRADA_BASE_MANANA ? h.ENTRADA_BASE_MANANA : i1Total;
+        const salidaEfectivaMañana = s1Total >= h.SALIDA_BASE_MANANA ? h.SALIDA_BASE_MANANA : s1Total;
         sesion1 = Math.max(0, salidaEfectivaMañana - ingresoEfectivo);
 
-        // Tarde: Base 16:30 a 21:30 (si regresa 16:31 cuenta desde 16:31 descontando tardanza)
-        regresoEfectivo = i2Total <= 16 * 60 + 30 ? 16 * 60 + 30 : i2Total;
-        const salidaEfectivaTarde = s2Total <= 21 * 60 + 30 ? 21 * 60 + 30 : s2Total;
+        // Tarde: si regresa después de la base, se descuenta la tardanza
+        const regresoEfectivo = i2Total <= h.RETORNO_BASE_TARDE ? h.RETORNO_BASE_TARDE : i2Total;
+        // En el horario vigente la salida se topa a la base; en el anterior era la hora real
+        const salidaEfectivaTarde = (h.TOPA_SALIDA_TARDE !== false && s2Total <= h.SALIDA_BASE_TARDE)
+          ? h.SALIDA_BASE_TARDE
+          : s2Total;
         sesion2 = Math.max(0, salidaEfectivaTarde - regresoEfectivo);
       } else if (turnoDetectado === 'TARDE') {
         // Base 13:00, break 1h desde salida
@@ -365,8 +372,8 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
         sesion1 = Math.max(0, s1Total - ingresoEfectivo);
         sesion2 = Math.max(0, s2Total - regresoEfectivo);
       } else {
-        // TODO_EL_DIA: Base 10:00, break 1h desde salida
-        ingresoEfectivo = i1Total <= 10 * 60 ? 10 * 60 : i1Total;
+        // TODO_EL_DIA: break fijo de 1h, la salida del break puede ser a cualquier hora
+        ingresoEfectivo = i1Total <= h.ENTRADA_BASE_MANANA ? h.ENTRADA_BASE_MANANA : i1Total;
         const regresoMinimo = s1Total + 60;
         regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
         sesion1 = Math.max(0, s1Total - ingresoEfectivo);
@@ -432,24 +439,17 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
   };
 
   const handleApplyPreset = (empId, tipo) => {
-    let i1 = '13:00', s1 = '17:00', i2 = '18:00', s2 = '22:00';
-    if (tipo === 'COMPARTIDO') {
-      i1 = '10:00'; s1 = '13:30'; i2 = '16:30'; s2 = '21:30';
-    } else if (tipo === 'TODO_EL_DIA') {
-      i1 = '10:00'; s1 = '14:00'; i2 = '15:00'; s2 = '22:00';
-    } else if (tipo === 'PART_TIME') {
-      i1 = '14:00'; s1 = ''; i2 = ''; s2 = '18:00';
-    }
+    const p = marcajesPreset(tipo, fecha);
 
     setFormData(prev => {
       const updated = {
         ...prev[empId],
         turno_manual: tipo,
         sin_restricciones: false,
-        ingreso_1: i1,
-        salida_1: s1,
-        ingreso_2: i2,
-        salida_2: s2,
+        ingreso_1: p.i1,
+        salida_1: p.s1,
+        ingreso_2: p.i2,
+        salida_2: p.s2,
         es_descanso: false,
       };
       return {
@@ -938,8 +938,8 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
                                   Auto ({turnoName === 'SIN_RESTRICCIONES' ? 'Sin Restr.' : turnoName})
                                 </option>
                                 <option value="TARDE" className="bg-slate-900 text-blue-300">TARDE (13:00-22:00)</option>
-                                <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">COMPARTIDO (10:00-21:30)</option>
-                                <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">TODO EL DÍA (10:00-22:00)</option>
+                                <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">{etiquetaTurno('COMPARTIDO', fecha)}</option>
+                                <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">{etiquetaTurno('TODO_EL_DIA', fecha)}</option>
                                 <option value="PART_TIME" className="bg-slate-900 text-cyan-300">PART TIME (4 Horas)</option>
                                 <option value="SIN_RESTRICCIONES" className="bg-slate-900 text-amber-300 font-bold">⚡ SIN RESTRICCIONES (Hora Real)</option>
                               </select>
@@ -1076,7 +1076,7 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
                                 <button
                                   type="button"
                                   onClick={() => handleApplyPreset(emp.id, 'COMPARTIDO')}
-                                  title="Llenar Compartido (10:00-21:30, 3h30 break)"
+                                  title={`Llenar Compartido (${rangoTurno('COMPARTIDO', fecha)}, corte 13:00)`}
                                   className="px-1.5 py-1 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition"
                                 >
                                   Comp.

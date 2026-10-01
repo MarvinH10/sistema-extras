@@ -10,10 +10,50 @@ class CalculoHorasExtraService
     public const JORNADA_MINUTOS = 480; // 8 horas = 480 minutos
     public const JORNADA_PART_TIME_MINUTOS = 240; // 4 horas = 240 minutos
 
-    public const ENTRADA_BASE_MANANA = '10:00'; // Inicio de jornada en la mañana
-    public const SALIDA_BASE_MANANA = '13:00'; // Corte de la mañana (fin del refrigerio)
-    public const RETORNO_BASE_TARDE = '16:30'; // Regreso base tras el break
-    public const SALIDA_BASE_TARDE = '21:30'; // Salida base de la tarde
+    /**
+     * El cambio de horario de ingreso (09:00 -> 10:00) entra en vigor el 1 de octubre de 2026.
+     * Los registros con fecha anterior se siguen calculando con las reglas anteriores.
+     */
+    public const CAMBIO_HORARIO_DESDE = '2026-10-01';
+
+    // Horario vigente desde el 2026-10-01
+    public const ENTRADA_BASE_MANANA = '10:00';
+    public const SALIDA_BASE_MANANA = '13:00';
+    public const RETORNO_BASE_TARDE = '16:30';
+    public const SALIDA_BASE_TARDE = '21:30';
+    public const BREAK_MIN_COMPARTIDO = 120;
+    public const BREAK_WINDOW_COMPARTIDO = 210;
+
+    // Horario anterior (hasta el 2026-09-30)
+    public const LEG_ENTRADA_BASE_MANANA = '09:00';
+    public const LEG_SALIDA_BASE_MANANA = '13:00';
+    public const LEG_RETORNO_BASE_TARDE = '18:00';
+    public const LEG_SALIDA_BASE_TARDE = '22:00';
+    public const LEG_BREAK_MIN_COMPARTIDO = 180;
+    public const LEG_BREAK_WINDOW_COMPARTIDO = 300;
+
+    public const TARDE_ENTRADA_BASE = '13:00';
+
+    /**
+     * Indica si la fecha ya usa el horario vigente (ingreso 10:00).
+     */
+    public function esFechaHorarioNuevo(string $fecha): bool
+    {
+        return Carbon::parse($fecha)->startOfDay()->gte(Carbon::parse(self::CAMBIO_HORARIO_DESDE));
+    }
+
+    /**
+     * Resuelve la hora de entrada base de un turno según la fecha del registro.
+     * Antes del cambio, los turnos de mañana ingressaban 09:00.
+     */
+    private function entradaBaseEfectiva(Turno $turno, string $fecha): string
+    {
+        if (!$this->esFechaHorarioNuevo($fecha) && $turno->entrada_base === self::ENTRADA_BASE_MANANA) {
+            return self::LEG_ENTRADA_BASE_MANANA;
+        }
+
+        return $turno->entrada_base;
+    }
 
     /**
      * Detecta automáticamente el tipo de turno basado en los horarios de marcaje.
@@ -22,9 +62,10 @@ class CalculoHorasExtraService
      * @param Carbon|string|null $s1
      * @param Carbon|string|null $i2
      * @param Carbon|string|null $s2
+     * @param string|null $fecha Fecha del registro; define el umbral de break (anterior o vigente)
      * @return string 'TARDE' | 'COMPARTIDO' | 'TODO_EL_DIA' | 'PART_TIME' | 'SIN_RESTRICCIONES'
      */
-    public function detectarTipoTurno($i1, $s1, $i2, $s2): string
+    public function detectarTipoTurno($i1, $s1, $i2, $s2, ?string $fecha = null): string
     {
         if (empty($i1)) {
             return 'TARDE';
@@ -79,8 +120,13 @@ class CalculoHorasExtraService
 
             $duracionBreak = $i2Total - $s1Total;
 
-            // Si el break es largo (>= 2 horas / 120 min; COMPARTIDO usa ~210 min) => COMPARTIDO
-            if ($duracionBreak >= 120) {
+            // Umbral de break según el horario aplicable a la fecha del registro
+            $breakMinCompartido = ($fecha !== null && !$this->esFechaHorarioNuevo($fecha))
+                ? self::LEG_BREAK_MIN_COMPARTIDO
+                : self::BREAK_MIN_COMPARTIDO;
+
+            // Break largo (>= 120 min en el horario vigente / >= 180 min en el anterior) => COMPARTIDO
+            if ($duracionBreak >= $breakMinCompartido) {
                 return 'COMPARTIDO';
             }
 
@@ -199,7 +245,7 @@ class CalculoHorasExtraService
 
         // Si faltan algunos marcajes en turnos estándar de 4 marcas
         if (empty($ingreso1) || empty($salida1) || empty($ingreso2) || empty($salida2)) {
-            $tipoDetectado = $this->detectarTipoTurno($ingreso1, $salida1, $ingreso2, $salida2);
+            $tipoDetectado = $this->detectarTipoTurno($ingreso1, $salida1, $ingreso2, $salida2, $fecha);
             return [
                 'minutos_trabajados' => null,
                 'minutos_extra' => null,
@@ -231,7 +277,7 @@ class CalculoHorasExtraService
         }
 
         if (!$tipoNombre) {
-            $tipoNombre = $this->detectarTipoTurno($dIngreso1, $dSalida1, $dIngreso2, $dSalida2);
+            $tipoNombre = $this->detectarTipoTurno($dIngreso1, $dSalida1, $dIngreso2, $dSalida2, $fecha);
         }
 
         // MODO SIN RESTRICCIONES (Hora real exacta punto a punto)
@@ -263,14 +309,19 @@ class CalculoHorasExtraService
             ];
         }
 
-        // Si no se proporcionó un Turno con horas base, instanciar un modelo con los valores estándar
+        // Si no se proporcionó un Turno con horas base, instanciar un modelo con los valores del horario aplicable a la fecha
         if (!$turno) {
+            $esNuevo = $this->esFechaHorarioNuevo($fecha);
             $turno = new Turno([
                 'nombre' => $tipoNombre,
-                'entrada_base' => $tipoNombre === 'TARDE' ? '13:00' : self::ENTRADA_BASE_MANANA,
+                'entrada_base' => $tipoNombre === 'TARDE'
+                    ? self::TARDE_ENTRADA_BASE
+                    : ($esNuevo ? self::ENTRADA_BASE_MANANA : self::LEG_ENTRADA_BASE_MANANA),
                 'salida_base' => '22:00',
                 'break_tipo' => $tipoNombre === 'COMPARTIDO' ? 'ventana' : 'fijo',
-                'break_minutos' => $tipoNombre === 'COMPARTIDO' ? 210 : 60,
+                'break_minutos' => $tipoNombre === 'COMPARTIDO'
+                    ? ($esNuevo ? self::BREAK_WINDOW_COMPARTIDO : self::LEG_BREAK_WINDOW_COMPARTIDO)
+                    : 60,
             ]);
         }
 
@@ -319,7 +370,7 @@ class CalculoHorasExtraService
         Carbon $i2,
         Carbon $s2
     ): array {
-        $entradaBase = Carbon::parse("$fecha {$turno->entrada_base}");
+        $entradaBase = Carbon::parse("$fecha " . $this->entradaBaseEfectiva($turno, $fecha));
         $breakMinutos = $turno->break_minutos ?: 60;
 
         // 1. Ingreso efectivo: si llega <= base => base. Si llega > base => real.
@@ -346,6 +397,8 @@ class CalculoHorasExtraService
             'es_descanso' => false,
             'detalles' => [
                 'tipo_turno' => $turno->nombre,
+                'horario' => $this->esFechaHorarioNuevo($fecha) ? 'VIGENTE' : 'ANTERIOR',
+                'entrada_base' => $entradaBase->format('H:i'),
                 'ingreso_efectivo' => $ingresoEfectivo->format('H:i'),
                 'salida_break' => $s1->format('H:i'),
                 'regreso_minimo' => $regresoMinimo->format('H:i'),
@@ -358,10 +411,10 @@ class CalculoHorasExtraService
     }
 
     /**
-     * Lógica para Turno COMPARTIDO (10:00 a 13:00 y 16:30 a 21:30).
-     * - Mañana: Base 10:00 a 13:00 (tope 13:00 para corte de refrigerio, 180 min).
-     * - Tarde: Base 16:30 a 21:30. Si regresa > 16:30 (ej. 16:31), se descuenta tardanza.
-     *   Las horas extras se computan a partir de las 21:30 (ej. salida 21:35 = +5m - 1m demora = +4 min).
+     * Lógica para Turno COMPARTIDO.
+     *
+     * Desde el 2026-10-01: 10:00 a 13:00 y 16:30 a 21:30.
+     * Hasta el 2026-09-30: 09:00 a 13:00 y 18:00 a 22:00 (la salida se tomaba real, sin tope).
      */
     private function calcularTurnoCompartido(
         Turno $turno,
@@ -371,23 +424,31 @@ class CalculoHorasExtraService
         Carbon $i2,
         Carbon $s2
     ): array {
-        $entradaBaseMañana = Carbon::parse("$fecha {$turno->entrada_base}");
-        $salidaBaseMañana = Carbon::parse("$fecha " . self::SALIDA_BASE_MANANA);
-        $retornoBaseTarde = Carbon::parse("$fecha " . self::RETORNO_BASE_TARDE);
-        $salidaBaseTarde = Carbon::parse("$fecha " . self::SALIDA_BASE_TARDE);
+        $esNuevo = $this->esFechaHorarioNuevo($fecha);
+
+        $entradaBaseMañana = Carbon::parse("$fecha " . $this->entradaBaseEfectiva($turno, $fecha));
+        $salidaBaseMañana = Carbon::parse("$fecha " . ($esNuevo ? self::SALIDA_BASE_MANANA : self::LEG_SALIDA_BASE_MANANA));
+        $retornoBaseTarde = Carbon::parse("$fecha " . ($esNuevo ? self::RETORNO_BASE_TARDE : self::LEG_RETORNO_BASE_TARDE));
+        $salidaBaseTarde = Carbon::parse("$fecha " . ($esNuevo ? self::SALIDA_BASE_TARDE : self::LEG_SALIDA_BASE_TARDE));
 
         // 1. Sesión Mañana:
-        // Ingreso efectivo (si llega <= 10:00 => 10:00, si llega > 10:00 => real)
+        // Ingreso efectivo (si llega <= base => base, si llega > base => real)
         $ingresoEfectivo = $i1->lte($entradaBaseMañana) ? $entradaBaseMañana->copy() : $i1->copy();
-        // Salida efectiva mañana (tope a las 13:00 para corte de refrigerio; si sale antes => real)
+        // Salida efectiva mañana (tope para corte de refrigerio; si sale antes => real)
         $salidaEfectiva1 = $s1->gte($salidaBaseMañana) ? $salidaBaseMañana->copy() : $s1->copy();
         $sesion1 = max(0, (int) $ingresoEfectivo->diffInMinutes($salidaEfectiva1, false));
 
         // 2. Sesión Tarde:
-        // Retorno efectivo (si regresa <= 16:30 => 16:30, si regresa > 16:30 ej. 16:31 => real con descuento)
+        // Retorno efectivo (si regresa <= base => base, si regresa > base ej. 16:31 => real con descuento)
         $regresoEfectivo = $i2->lte($retornoBaseTarde) ? $retornoBaseTarde->copy() : $i2->copy();
-        // Salida efectiva: si sale antes de la base 21:30 se topa a la base, si sale después => real (extras)
-        $salidaEfectiva2 = $s2->lte($salidaBaseTarde) ? $salidaBaseTarde->copy() : $s2->copy();
+
+        if ($esNuevo) {
+            // Horario vigente: la salida se topa a la base 21:30; lo que pase de ahí son extras.
+            $salidaEfectiva2 = $s2->lte($salidaBaseTarde) ? $salidaBaseTarde->copy() : $s2->copy();
+        } else {
+            // Horario anterior: la salida final era sempre la hora real registrada.
+            $salidaEfectiva2 = $s2->copy();
+        }
         $sesion2 = max(0, (int) $regresoEfectivo->diffInMinutes($salidaEfectiva2, false));
 
         $minutosTrabajados = $sesion1 + $sesion2;
@@ -400,12 +461,13 @@ class CalculoHorasExtraService
             'es_descanso' => false,
             'detalles' => [
                 'tipo_turno' => 'COMPARTIDO',
+                'horario' => $esNuevo ? 'VIGENTE' : 'ANTERIOR',
                 'ingreso_efectivo' => $ingresoEfectivo->format('H:i'),
                 'salida_break' => $s1->format('H:i'),
                 'salida_efectiva_manana' => $salidaEfectiva1->format('H:i'),
-                'regreso_base' => self::RETORNO_BASE_TARDE,
+                'regreso_base' => $retornoBaseTarde->format('H:i'),
                 'regreso_efectivo' => $regresoEfectivo->format('H:i'),
-                'salida_base_tarde' => self::SALIDA_BASE_TARDE,
+                'salida_base_tarde' => $salidaBaseTarde->format('H:i'),
                 'salida_efectiva' => $salidaEfectiva2->format('H:i'),
                 'minutos_sesion_1' => $sesion1,
                 'minutos_sesion_2' => $sesion2,

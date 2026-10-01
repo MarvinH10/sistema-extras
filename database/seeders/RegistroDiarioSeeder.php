@@ -40,6 +40,18 @@ class RegistroDiarioSeeder extends Seeder
                 // Generar marcajes según rotación realista
                 $randomCase = ($emp->id + $dia) % 4;
 
+                // Horario aplicable a esta fecha (cambió el 2026-10-01)
+                $esNuevo = $service->esFechaHorarioNuevo($fecha);
+                $entradaBase = $esNuevo
+                    ? CalculoHorasExtraService::ENTRADA_BASE_MANANA
+                    : CalculoHorasExtraService::LEG_ENTRADA_BASE_MANANA;
+                $retornoBaseTarde = $esNuevo
+                    ? CalculoHorasExtraService::RETORNO_BASE_TARDE
+                    : CalculoHorasExtraService::LEG_RETORNO_BASE_TARDE;
+                $salidaBaseTarde = $esNuevo
+                    ? CalculoHorasExtraService::SALIDA_BASE_TARDE
+                    : CalculoHorasExtraService::LEG_SALIDA_BASE_TARDE;
+
                 if ($randomCase === 0) {
                     // Turno TARDE con extras (+30 min)
                     $i1 = '12:45'; $s1 = '17:00'; $i2 = '17:45'; $s2 = '22:30';
@@ -47,11 +59,11 @@ class RegistroDiarioSeeder extends Seeder
                     // Turno TARDE con tardanza y déficit (-20 min)
                     $i1 = '13:05'; $s1 = '17:00'; $i2 = '18:15'; $s2 = '22:00';
                 } elseif ($randomCase === 2) {
-                    // Turno COMPARTIDO exacto (0 min): 10:00 a 13:00 + 16:30 a 21:30
-                    $i1 = '09:50'; $s1 = '13:30'; $i2 = '16:30'; $s2 = '21:30';
+                    // Turno COMPARTIDO exacto (0 min)
+                    $i1 = $entradaBase; $s1 = '13:30'; $i2 = $retornoBaseTarde; $s2 = $salidaBaseTarde;
                 } else {
-                    // Turno TODO EL DIA con extras (+45 min): base 10:00, break 1h
-                    $i1 = '10:00'; $s1 = '14:00'; $i2 = '15:00'; $s2 = '22:45';
+                    // Turno TODO EL DIA con extras
+                    $i1 = $entradaBase; $s1 = '14:00'; $i2 = '15:00'; $s2 = '22:45';
                 }
 
                 $calculo = $service->calcular(

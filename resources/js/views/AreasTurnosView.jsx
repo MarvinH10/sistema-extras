@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { getAreas, getTurnos } from '../services/api';
+import { reglasTurno, etiquetaRegimen, CAMBIO_HORARIO_DESDE } from '../services/horarios';
 import { Layers, Clock, ShieldCheck, AlertTriangle, Coffee, ArrowRight, CheckCircle2, Zap } from 'lucide-react';
+
+const FECHA_HORARIO_ANTERIOR = '2026-09-30';
 
 export default function AreasTurnosView() {
   const [areas, setAreas] = useState([]);
   const [turnos, setTurnos] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fechaRef, setFechaRef] = useState(CAMBIO_HORARIO_DESDE);
+
+  const reglasCompartido = reglasTurno('COMPARTIDO', fechaRef);
+  const reglasTodoElDia = reglasTurno('TODO_EL_DIA', fechaRef);
+  const esNuevo = fechaRef >= CAMBIO_HORARIO_DESDE;
 
   useEffect(() => {
     Promise.all([getAreas(), getTurnos()])
@@ -39,6 +47,34 @@ export default function AreasTurnosView() {
           <Clock className="text-indigo-400" size={18} />
           Lógica de Cálculo por Tipo de Turno
         </h3>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-xl border border-slate-700 overflow-hidden text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setFechaRef(FECHA_HORARIO_ANTERIOR)}
+              className={`px-3 py-1.5 transition ${
+                !esNuevo
+                  ? 'bg-amber-500/20 text-amber-300'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Anterior (hasta 30 sep)
+            </button>
+            <button
+              type="button"
+              onClick={() => setFechaRef(CAMBIO_HORARIO_DESDE)}
+              className={`px-3 py-1.5 transition ${
+                esNuevo
+                  ? 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Vigente (desde 1 oct)
+            </button>
+          </div>
+          <span className="text-xs text-slate-400">{etiquetaRegimen(fechaRef)}</span>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* TARDE Card */}
@@ -82,28 +118,28 @@ export default function AreasTurnosView() {
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
                   TURNO COMPARTIDO
                 </span>
-                <span className="text-xs font-mono text-slate-400">10:00 - 21:30</span>
+                <span className="text-xs font-mono text-slate-400">{reglasCompartido.rango}</span>
               </div>
               
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-purple-400 shrink-0 mt-0.5" />
-                  <span><strong>Mañana (10:00 a 13:00):</strong> Entrada base 10:00. Salida break con corte base a las 13:00 (180 min).</span>
+                  <span>{reglasCompartido.manana}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Retorno Break (Base 16:30):</strong> Si vuelve &le; 16:30 cuenta desde 16:30. Si vuelve después (ej. 16:31), se descuenta tardanza.</span>
+                  <span>{reglasCompartido.break}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
-                  <span><strong>Salida:</strong> Base 21:30. Lo que pase de las 21:30 suma extras directos.</span>
+                  <span>{reglasCompartido.salida}</span>
                 </li>
               </ul>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400">
               Jornada: <strong>8 Horas (480m)</strong>
-              <div className="font-mono text-purple-300 mt-0.5">Sesión1 + Sesión2 - 480m</div>
+              <div className="font-mono text-purple-300 mt-0.5">{reglasCompartido.detalle}</div>
             </div>
           </div>
 
@@ -115,21 +151,21 @@ export default function AreasTurnosView() {
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   TODO EL DÍA
                 </span>
-                <span className="text-xs font-mono text-slate-400">10:00 - 22:00</span>
+                <span className="text-xs font-mono text-slate-400">{reglasTodoElDia.rango}</span>
               </div>
               
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Ingreso:</strong> Si llega &le; 10:00 computa <strong>10:00</strong>. Si llega después, se computa hora real.</span>
+                  <span>{reglasTodoElDia.ingreso}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Break Fijo (1 Hora):</strong> Puede salir a cualquier hora, pero debe cumplir 60 min.</span>
+                  <span>{reglasTodoElDia.break}</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
-                  <span><strong>Salida:</strong> Todo el tiempo trabajado por encima de 8h (480m) suma horas extras directas.</span>
+                  <span>{reglasTodoElDia.salida}</span>
                 </li>
               </ul>
             </div>

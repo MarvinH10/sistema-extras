@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getReporteMensual, getAreas, guardarRegistroIndividual, getExportUrl } from '../services/api';
+import { esHorarioNuevo, horarioPara, etiquetaTurno } from '../services/horarios';
 import Modal from '../components/Modal';
 import TimeInput from '../components/TimeInput';
 import {
@@ -132,7 +133,7 @@ export default function MatrizMensualView() {
   }
 
   // Detección automática inteligente en cliente
-  function detectarTurnoClient(i1, s1, i2, s2) {
+  function detectarTurnoClient(i1, s1, i2, s2, fechaCtx) {
     const i1Min = timeToMinutes(i1);
     if (i1Min === null) return 'TARDE';
 
@@ -166,7 +167,8 @@ export default function MatrizMensualView() {
       let durBreak = i2Min - s1Min;
       if (durBreak < 0) durBreak += 24 * 60;
 
-      if (durBreak >= 120) {
+      const breakMin = esHorarioNuevo(fechaCtx) ? 120 : 180;
+      if (durBreak >= breakMin) {
         return 'COMPARTIDO';
       }
       return 'TODO_EL_DIA';
@@ -190,7 +192,7 @@ export default function MatrizMensualView() {
     const isSinRestricciones = sin_restricciones || turno_nombre === 'SIN_RESTRICCIONES';
     const turnoDetectado = isSinRestricciones 
       ? 'SIN_RESTRICCIONES' 
-      : ((turno_nombre && turno_nombre !== 'AUTO') ? turno_nombre : detectarTurnoClient(i1, s1, i2, s2));
+      : ((turno_nombre && turno_nombre !== 'AUTO') ? turno_nombre : detectarTurnoClient(i1, s1, i2, s2, item.fecha));
 
     const i1Total = timeToMinutes(i1);
     const s1Total = timeToMinutes(s1);
@@ -307,8 +309,8 @@ export default function MatrizMensualView() {
         };
       }
 
-      const ebH = turnoDetectado === 'TARDE' ? 13 : 10;
-      const ebTotal = ebH * 60;
+      const h = horarioPara(item.fecha);
+      const ebTotal = turnoDetectado === 'TARDE' ? 13 * 60 : h.ENTRADA_BASE_MANANA;
 
       if (s2Total < i2Total) s2Total += 24 * 60;
 
@@ -316,16 +318,16 @@ export default function MatrizMensualView() {
       let sesion2;
 
       if (turnoDetectado === 'COMPARTIDO') {
-        // Mañana: Base 10:00 a 13:00 (tope 13:00 = 180 min)
+        // Mañana: tope en la salida base para corte de refrigerio
         const ingresoEfectivo = i1Total <= ebTotal ? ebTotal : i1Total;
-        const salidaEfectivaManana = s1Total >= 13 * 60 ? 13 * 60 : s1Total;
+        const salidaEfectivaManana = s1Total >= h.SALIDA_BASE_MANANA ? h.SALIDA_BASE_MANANA : s1Total;
         sesion1 = Math.max(0, salidaEfectivaManana - ingresoEfectivo);
 
-        // Tarde: Base 16:30 a 21:30
-        const baseTarde = 16 * 60 + 30;
-        const baseSalidaTarde = 21 * 60 + 30;
-        const regresoEfectivo = i2Total <= baseTarde ? baseTarde : i2Total;
-        const salidaEfectivaTarde = s2Total <= baseSalidaTarde ? baseSalidaTarde : s2Total;
+        // Tarde: base de retorno; en el horario vigente la salida se topa a la base
+        const regresoEfectivo = i2Total <= h.RETORNO_BASE_TARDE ? h.RETORNO_BASE_TARDE : i2Total;
+        const salidaEfectivaTarde = (h.TOPA_SALIDA_TARDE !== false && s2Total <= h.SALIDA_BASE_TARDE)
+          ? h.SALIDA_BASE_TARDE
+          : s2Total;
         sesion2 = Math.max(0, salidaEfectivaTarde - regresoEfectivo);
       } else {
         const breakMin = 60;
@@ -779,8 +781,8 @@ export default function MatrizMensualView() {
                 >
                   <option value="AUTO" className="bg-slate-900 text-slate-200">Auto ({selectedCell.calcTurno === 'SIN_RESTRICCIONES' ? 'Sin Restr.' : (selectedCell.calcTurno || 'TARDE')})</option>
                   <option value="TARDE" className="bg-slate-900 text-blue-300">TARDE (13:00 - 22:00)</option>
-                  <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">COMPARTIDO (10:00 - 21:30)</option>
-                  <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">TODO EL DÍA (10:00 - 22:00)</option>
+                  <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">{etiquetaTurno('COMPARTIDO', selectedCell.fecha)}</option>
+                  <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">{etiquetaTurno('TODO_EL_DIA', selectedCell.fecha)}</option>
                   <option value="PART_TIME" className="bg-slate-900 text-cyan-300 font-bold">PART TIME (4 Horas)</option>
                   <option value="SIN_RESTRICCIONES" className="bg-slate-900 text-amber-300 font-bold">⚡ SIN RESTRICCIONES (Hora Real)</option>
                 </select>

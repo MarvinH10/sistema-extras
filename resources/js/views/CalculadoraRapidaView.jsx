@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getTurnos, previewCalculo } from '../services/api';
+import { horarioPara, rangoTurno, entradaSalidaTurno, marcajesPreset, minutosATexto, etiquetaRegimen, esHorarioNuevo } from '../services/horarios';
 import TimeInput from '../components/TimeInput';
 import { Calculator, ArrowRight, CheckCircle, Clock, Zap, Info, Sparkles } from 'lucide-react';
 
@@ -53,22 +54,28 @@ export default function CalculadoraRapidaView() {
   const selectedTurno = turnos.find(t => t.id === Number(selectedTurnoId));
 
   const setPreset = (preset) => {
-    if (preset === 'tarde_temprano') {
-      const t = turnos.find(x => x.nombre === 'TARDE');
+    const h = horarioPara(fecha);
+    const manana = minutosATexto(h.ENTRADA_BASE_MANANA);
+
+    const seleccionar = (nombre) => {
+      const t = turnos.find(x => x.nombre === nombre);
       if (t) setSelectedTurnoId(t.id);
+    };
+
+    if (preset === 'tarde_temprano') {
+      seleccionar('TARDE');
       setIngreso1('12:45'); setSalida1('17:00'); setIngreso2('17:45'); setSalida2('22:30'); setEsDescanso(false);
     } else if (preset === 'tarde_tardanza') {
-      const t = turnos.find(x => x.nombre === 'TARDE');
-      if (t) setSelectedTurnoId(t.id);
+      seleccionar('TARDE');
       setIngreso1('13:08'); setSalida1('17:00'); setIngreso2('18:15'); setSalida2('22:00'); setEsDescanso(false);
     } else if (preset === 'compartido_5h') {
-      const t = turnos.find(x => x.nombre === 'COMPARTIDO');
-      if (t) setSelectedTurnoId(t.id);
-      setIngreso1('09:50'); setSalida1('13:30'); setIngreso2('16:20'); setSalida2('21:45'); setEsDescanso(false);
+      seleccionar('COMPARTIDO');
+      const p = marcajesPreset('COMPARTIDO', fecha);
+      setIngreso1(p.i1); setSalida1(p.s1); setIngreso2(p.i2); setSalida2(p.s2); setEsDescanso(false);
     } else if (preset === 'todo_el_dia') {
-      const t = turnos.find(x => x.nombre === 'TODO_EL_DIA');
-      if (t) setSelectedTurnoId(t.id);
-      setIngreso1('10:00'); setSalida1('14:00'); setIngreso2('15:00'); setSalida2('22:45'); setEsDescanso(false);
+      seleccionar('TODO_EL_DIA');
+      const p = marcajesPreset('TODO_EL_DIA', fecha);
+      setIngreso1(p.i1); setSalida1(p.s1); setIngreso2(p.i2); setSalida2(p.s2); setEsDescanso(false);
     }
   };
 
@@ -83,6 +90,9 @@ export default function CalculadoraRapidaView() {
           <h2 className="text-xl font-bold text-white">Simulador en Vivo de Horas Extras</h2>
           <p className="text-xs text-slate-400">
             Prueba cualquier horario y valida paso a paso cómo se aplican las reglas de tolerancia
+          </p>
+          <p className={`text-[11px] font-semibold mt-1 ${esHorarioNuevo(fecha) ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {etiquetaRegimen(fecha)}
           </p>
         </div>
       </div>
@@ -108,13 +118,13 @@ export default function CalculadoraRapidaView() {
           onClick={() => setPreset('compartido_5h')}
           className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs rounded-lg border border-slate-700 transition"
         >
-          Compartido: Break 3h30 + Extras (+15m)
+          Compartido: {rangoTurno('COMPARTIDO', fecha)} (base exacta)
         </button>
         <button
           onClick={() => setPreset('todo_el_dia')}
           className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs rounded-lg border border-slate-700 transition"
         >
-          Todo el Día: 10:00 a 22:45 (+225m)
+          Todo el Día: base {minutosATexto(horarioPara(fecha).ENTRADA_BASE_MANANA)} + horas extra
         </button>
       </div>
 
@@ -130,11 +140,14 @@ export default function CalculadoraRapidaView() {
               onChange={(e) => setSelectedTurnoId(e.target.value)}
               className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-500 cursor-pointer"
             >
-              {turnos.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.nombre} (Entrada: {t.entrada_base?.substring(0, 5)} / Salida: {t.salida_base?.substring(0, 5)})
-                </option>
-              ))}
+              {turnos.map(t => {
+                const es = entradaSalidaTurno(t.nombre, fecha);
+                return (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre} (Entrada: {es.entrada} / Salida: {es.salida})
+                  </option>
+                );
+              })}
             </select>
           </div>
 
