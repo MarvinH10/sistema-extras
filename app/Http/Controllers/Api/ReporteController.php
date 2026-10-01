@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Area;
 use App\Models\Empleado;
 use App\Models\RegistroDiario;
+use App\Models\Turno;
+use App\Services\CalculoHorasExtraService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +20,62 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReporteController extends Controller
 {
+    public function __construct(
+        protected CalculoHorasExtraService $calculoService
+    ) {}
+
+    /**
+     * Recalcula los minutos de un registro aplicando las reglas vigentes.
+     *
+     * Un registro guardado con reglas anteriores (por ejemplo antes del cambio
+     * de horario del 2026-10-01) conserva en la tabla los minutos de entonces.
+     * La matriz y el Excel releen los marcajes y pasan por el mismo servicio que
+     * usa la captura diaria, así el reporte nunca discrepa de lo que se ve en
+     * pantalla. No modifica la base de datos.
+     *
+     * @return array{0: ?int, 1: ?int} [minutos_trabajados, minutos_extra]
+     */
+    private function minutosDeRegistro(
+        RegistroDiario $reg,
+        array $turnosPorId,
+        array $turnosPorNombre
+    ): array {
+        // Se resuelve el turno igual que al guardar, para reproducir la decisión original.
+        $turno = null;
+        if (! empty($reg->turno_id) && isset($turnosPorId[$reg->turno_id])) {
+            $turno = $turnosPorId[$reg->turno_id];
+        } elseif ($reg->turno_detectado) {
+            $nombre = strtoupper(trim($reg->turno_detectado));
+            if (! in_array($nombre, ['AUTO', 'SIN_RESTRICCIONES'], true)) {
+                $turno = $turnosPorNombre[$nombre] ?? null;
+            }
+        }
+
+        $nombreDetectado = strtoupper((string) $reg->turno_detectado);
+        $sinRestricciones = (bool) $reg->sin_restricciones || $nombreDetectado === 'SIN_RESTRICCIONES';
+
+        $calculo = $this->calculoService->calcular(
+            $turno,
+            Carbon::parse($reg->fecha)->format('Y-m-d'),
+            $this->normalizarHora($reg->ingreso_1),
+            $this->normalizarHora($reg->salida_1),
+            $this->normalizarHora($reg->ingreso_2),
+            $this->normalizarHora($reg->salida_2),
+            (bool) $reg->es_descanso,
+            $sinRestricciones
+        );
+
+        return [
+            $calculo['minutos_trabajados'],
+            $calculo['minutos_extra'],
+        ];
+    }
+
+    private function normalizarHora(?string $valor): ?string
+    {
+        return ! empty($valor) ? substr(trim($valor), 0, 5) : null;
+    }
+
     public function mensual(Request $request): JsonResponse
     {
         $anio = (int) $request->input('anio', date('Y'));
@@ -47,8 +105,12 @@ class ReporteController extends Controller
         $granTotalMinutosExtra = 0;
         $totalEmpleados = 0;
 
-        $areasData = $areas->map(function ($area) use ($totalDias, &$totalesPorDia, &$granTotalMinutosExtra, &$totalEmpleados) {
-            $empleadosData = $area->empleados->map(function ($emp) use ($totalDias, &$totalesPorDia, &$granTotalMinutosExtra, &$totalEmpleados) {
+        $turnos = Turno::all();
+        $turnosPorId = $turnos->keyBy('id')->all();
+        $turnosPorNombre = $turnos->keyBy(fn ($t) => strtoupper(trim($t->nombre)))->all();
+
+        $areasData = $areas->map(function ($area) use ($totalDias, $turnosPorId, $turnosPorNombre, &$totalesPorDia, &$granTotalMinutosExtra, &$totalEmpleados) {
+            $empleadosData = $area->empleados->map(function ($emp) use ($totalDias, $turnosPorId, $turnosPorNombre, &$totalesPorDia, &$granTotalMinutosExtra, &$totalEmpleados) {
                 $totalEmpleados++;
                 $registrosMap = $emp->registros->keyBy(function ($r) {
                     return (int) Carbon::parse($r->fecha)->day;
@@ -63,8 +125,8 @@ class ReporteController extends Controller
                     $reg = $registrosMap->get($d);
 
                     if ($reg) {
-                        $minExtra = $reg->minutos_extra;
-                        $minTrab = $reg->minutos_trabajados;
+                        // Se recalcula con las reglas vigentes en vez de leer el valor guardado.
+                        [$minTrab, $minExtra] = $this->minutosDeRegistro($reg, $turnosPorId, $turnosPorNombre);
 
                         if ($minExtra !== null) {
                             $totalMinutosExtra += $minExtra;
@@ -153,6 +215,10 @@ class ReporteController extends Controller
                 ->orderBy('nombres');
         }])->orderBy('orden')->orderBy('nombre')->get();
 
+        $turnos = Turno::all();
+        $turnosPorId = $turnos->keyBy('id')->all();
+        $turnosPorNombre = $turnos->keyBy(fn ($t) => strtoupper(trim($t->nombre)))->all();
+
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle(substr("EXTRAS_{$mesNombre}", 0, 31));
@@ -239,19 +305,25 @@ class ReporteController extends Controller
                         $sheet->setCellValue("{$cLetter}{$row}", "D");
                         $sheet->getStyle("{$cLetter}{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('F1F5F9');
                         $sheet->getStyle("{$cLetter}{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                    } elseif ($reg && $reg->minutos_extra !== null) {
-                        $val = $reg->minutos_extra;
-                        $sheet->setCellValue("{$cLetter}{$row}", $val);
-                        $sheet->getStyle("{$cLetter}{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-                        $sumTotalMinutos += $val;
+                    } elseif ($reg) {
+                        // Igual que en la matriz: se recalcula con las reglas vigentes.
+                        [, $val] = $this->minutosDeRegistro($reg, $turnosPorId, $turnosPorNombre);
 
-                        // Coloreado condicional
-                        if ($val > 0) {
-                            $sheet->getStyle("{$cLetter}{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('DCFCE7'); // Verde suave
-                            $sheet->getStyle("{$cLetter}{$row}")->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('166534'));
-                        } elseif ($val < 0) {
-                            $sheet->getStyle("{$cLetter}{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FEE2E2'); // Rojo suave
-                            $sheet->getStyle("{$cLetter}{$row}")->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('991B1B'));
+                        if ($val !== null) {
+                            $sheet->setCellValue("{$cLetter}{$row}", $val);
+                            $sheet->getStyle("{$cLetter}{$row}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                            $sumTotalMinutos += $val;
+
+                            // Coloreado condicional
+                            if ($val > 0) {
+                                $sheet->getStyle("{$cLetter}{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('DCFCE7'); // Verde suave
+                                $sheet->getStyle("{$cLetter}{$row}")->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('166534'));
+                            } elseif ($val < 0) {
+                                $sheet->getStyle("{$cLetter}{$row}")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FEE2E2'); // Rojo suave
+                                $sheet->getStyle("{$cLetter}{$row}")->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('991B1B'));
+                            }
+                        } else {
+                            $sheet->setCellValue("{$cLetter}{$row}", "");
                         }
                     } else {
                         $sheet->setCellValue("{$cLetter}{$row}", "");
