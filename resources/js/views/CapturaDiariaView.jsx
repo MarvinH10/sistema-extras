@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Coffee,
   Clock,
+  Timer,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -22,6 +23,9 @@ import {
   EyeOff
 } from 'lucide-react';
 
+// Campos de marcaje: al editarlos se evalúa la autoselección de turno.
+const MARCAJES_FIELDS = ['ingreso_1', 'salida_1', 'ingreso_2', 'salida_2'];
+
 export default function CapturaDiariaView({ onNavigateToMatriz }) {
   const [fecha, setFecha] = useState(() => {
     return localStorage.getItem('kextras_selected_date') || new Date().toISOString().split('T')[0];
@@ -33,6 +37,14 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
   const [dataAreas, setDataAreas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autosave, setAutosave] = useState(() => {
+    try {
+      return localStorage.getItem('kextras_autosave') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [autosaveStatus, setAutosaveStatus] = useState('idle');
   const [toastMessage, setToastMessage] = useState(null);
   const [formData, setFormData] = useState({});
   const [draggedItem, setDraggedItem] = useState(null); // { areaId, index }
@@ -47,6 +59,10 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
     }
   });
   const dateInputRef = useRef(null);
+  const autosaveTimerRef = useRef(null);
+  const autosavingRef = useRef(false);
+  const autosaveResetTimerRef = useRef(null);
+  const lastSavedRef = useRef(null);
 
   const toggleAreaHidden = (aId) => {
     setHiddenAreas(prev => {
@@ -203,6 +219,44 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
     return 'COMPARTIDO';
   }
 
+  /**
+   * Autoselección del turno mientras la fila está en modo AUTO.
+   *
+   * - TARDE / COMPARTIDO / TODO_EL_DIA  -> SIN_RESTRICCIONES (⚡ Libre, hora real)
+   * - PART_TIME                          -> PART_TIME (se queda en part time)
+   *
+   * Reglas:
+   * - Solo actúa en filas que nunca se editaron a mano (turno_manual === 'AUTO'),
+   *   por lo que una selección manual o un preset nunca se sobrescriben.
+   * - Una vez aplicada la selección queda fijada (turno_manual deja de ser 'AUTO'),
+   *   de modo que sigue ahí aunque el cálculo automático detecte otro turno.
+   * - No se fija el turno mientras el juego de marcajes esté incompleto: la
+   *   detección sólo es concluyente con las 4 marcas, o con jornada corrida
+   *   real (ingreso + salida final). Evita que un estado intermedio como
+   *   "ingreso + salida break" se pinee como PART_TIME antes de tiempo.
+   */
+  function aplicarAutoTurno(item) {
+    if (!item || item.es_descanso) return item;
+    if (item.turno_manual && item.turno_manual !== 'AUTO') return item;
+
+    const i1Min = timeToMinutes(item.ingreso_1);
+    const s1Min = timeToMinutes(item.salida_1);
+    const i2Min = timeToMinutes(item.ingreso_2);
+    const s2Min = timeToMinutes(item.salida_2);
+
+    const jornadaCompleta = i1Min !== null && s1Min !== null && i2Min !== null && s2Min !== null;
+    const jornadaCorrida = i1Min !== null && s2Min !== null && s1Min === null && i2Min === null;
+    if (!jornadaCompleta && !jornadaCorrida) return item;
+
+    const detectado = detectarTurnoClient(item.ingreso_1, item.salida_1, item.ingreso_2, item.salida_2);
+
+    if (detectado === 'PART_TIME') {
+      return { ...item, turno_manual: 'PART_TIME', sin_restricciones: false };
+    }
+
+    return { ...item, turno_manual: 'SIN_RESTRICCIONES', sin_restricciones: true };
+  }
+
   // Recálculo rápido en el cliente con detección automática o manual o sin restricciones o part time
   function recalculateClient(item) {
     if (item.es_descanso) {
@@ -238,9 +292,14 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       };
     }
 
-    // Jornada corrida (solo 2 marcas: entrada y salida sin descanso)
-    const soloEntradaSalida = (i1Total !== null && s2Total !== null && s1Total === null && i2Total === null) ||
-                             (i1Total !== null && s1Total !== null && i2Total === null && s2Total === null);
+    // Jornada corrida real: solo ingreso + salida final.
+    // Un estado parcial (ingreso + salida break, sin retorno ni salida final)
+    // NO cuenta como jornada corrida: queda como incompleto en vez de fijar el
+    // modo Libre, para no pisar un turno elegido manualmente.
+    const tiene4Marcas = i1Total !== null && s1Total !== null && i2Total !== null && s2Total !== null;
+    const jornadaCorridaReal = i1Total !== null && s2Total !== null && s1Total === null && i2Total === null;
+    const jornadaUsable = tiene4Marcas || jornadaCorridaReal;
+    const soloEntradaSalida = jornadaCorridaReal;
 
     if (soloEntradaSalida) {
       const salidaMin = s2Total !== null ? s2Total : s1Total;
@@ -274,8 +333,10 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       }
     }
 
-    // CASO PART TIME EXPLICITO con 4 marcas (o modo forzado)
-    if (turno_manual === 'PART_TIME' || turnoDetectado === 'PART_TIME') {
+    // CASO PART TIME EXPLICITO con 4 marcas (o modo forzado).
+    // La detección automática solo habilita PART_TIME si la jornada es usable;
+    // si no, la fila se mantiene como incompleta.
+    if (turno_manual === 'PART_TIME' || (turnoDetectado === 'PART_TIME' && jornadaUsable)) {
       const entradaMin = i1Total;
       const salidaMin = s2Total !== null ? s2Total : s1Total;
 
@@ -414,7 +475,10 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
         [field]: value,
         sin_restricciones: isSinRestr,
       };
-      const recalculated = recalculateClient(updatedItem);
+      const conAutoTurno = MARCAJES_FIELDS.includes(field)
+        ? aplicarAutoTurno(updatedItem)
+        : updatedItem;
+      const recalculated = recalculateClient(conAutoTurno);
       return {
         ...prev,
         [empId]: recalculated,
@@ -547,11 +611,10 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
     setCanDragId(null);
   };
 
-  // Guardado silencioso sin perder la posición del scroll
-  const handleSaveAll = async () => {
-    setSaving(true);
-    try {
-      const registros = Object.values(formData).map(item => ({
+  // Arma el lote de marcajes del día a partir del estado actual del formulario.
+  const buildPayload = () =>
+    Object.values(formData)
+      .map(item => ({
         empleado_id: item.empleado_id,
         turno_nombre: item.turno_manual,
         sin_restricciones: Boolean(item.sin_restricciones || item.turno_manual === 'SIN_RESTRICCIONES'),
@@ -561,9 +624,23 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
         salida_2: item.salida_2 || null,
         es_descanso: Boolean(item.es_descanso),
         observaciones: item.observaciones || null,
-      }));
+      }))
+      .sort((a, b) => a.empleado_id - b.empleado_id);
 
-      await guardarAsistenciasLote(fecha, registros);
+  // Firma del lote para detectar cambios reales y evitar guardados de más.
+  const payloadSignature = (registros) => JSON.stringify(registros);
+
+  // Persistencia pura: NO toca formData, para que el autoguardado no se realimente.
+  const persistDay = async (registros) => {
+    await guardarAsistenciasLote(fecha, registros);
+    lastSavedRef.current = payloadSignature(registros);
+  };
+
+  // Guardado silencioso sin perder la posición del scroll
+  const handleSaveAll = async () => {
+    setSaving(true);
+    try {
+      await persistDay(buildPayload());
 
       // Feedback discreto
       setToastMessage('✅ Marcajes guardados exitosamente');
@@ -580,6 +657,70 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
     }
   };
 
+  const toggleAutosave = () => {
+    setAutosave(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('kextras_autosave', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  };
+
+  /**
+   * Autoguardado: tras un breve reposo sin edición, persiste el día completo.
+   * - No dispara guardados redundantes (compara la firma del lote).
+   * - No recarga los datos, así que no interrumpe la captura en curso.
+   * - Se limpia al cambiar de fecha/área o al desmontar la vista.
+   */
+  useEffect(() => {
+    if (!autosave || loading || saving) return;
+
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+    }
+    if (autosaveResetTimerRef.current) {
+      clearTimeout(autosaveResetTimerRef.current);
+      autosaveResetTimerRef.current = null;
+    }
+
+    autosaveTimerRef.current = setTimeout(async () => {
+      const registros = buildPayload();
+      if (payloadSignature(registros) === lastSavedRef.current) return;
+      if (autosavingRef.current) return;
+
+      autosavingRef.current = true;
+      setAutosaveStatus('saving');
+      try {
+        await persistDay(registros);
+        setAutosaveStatus('saved');
+      } catch (err) {
+        console.error('Error en autoguardado:', err);
+        setAutosaveStatus('error');
+      } finally {
+        autosavingRef.current = false;
+        autosaveResetTimerRef.current = setTimeout(() => setAutosaveStatus('idle'), 2500);
+      }
+    }, 1500);
+    setAutosaveStatus('pending');
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData, autosave, loading, saving]);
+
+  useEffect(() => {
+    lastSavedRef.current = null;
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+      if (autosaveResetTimerRef.current) clearTimeout(autosaveResetTimerRef.current);
+    };
+  }, [fecha, areaId]);
+
   const changeDateBy = (days) => {
     const d = new Date(fecha + 'T00:00:00');
     d.setDate(d.getDate() + days);
@@ -592,6 +733,15 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
   const completosCount = allItems.filter(i => !i.es_descanso && i.calcWorked !== null).length;
   const incompletosCount = allItems.filter(i => !i.es_descanso && i.isIncomplete).length;
   const totalMinutosExtraDia = allItems.reduce((acc, curr) => acc + (curr.calcExtra || 0), 0);
+
+const autosaveStatusText = !autosave
+    ? 'Desactivado'
+    : ({
+        pending: 'Pendiente…',
+        saving: 'Guardando…',
+        saved: 'Guardado ✓',
+        error: 'Error al guardar',
+      }[autosaveStatus] || 'Guarda tras 1.5 s');
 
   return (
     <div className="space-y-5 pb-24 w-full">
@@ -1106,7 +1256,7 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
 
       {/* Floating Bottom Save Bar */}
       <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-30 w-full max-w-4xl px-4">
-        <div className="glass-panel bg-slate-900/95 rounded-2xl p-4 shadow-2xl border border-indigo-500/30 flex items-center justify-between gap-4 backdrop-blur-xl">
+        <div className="glass-panel bg-slate-900/95 rounded-2xl p-4 shadow-2xl border border-indigo-500/30 flex flex-wrap items-center justify-between gap-4 backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold">
               {saving ? (
@@ -1130,7 +1280,43 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Autoguardado */}
+            <button
+              type="button"
+              onClick={toggleAutosave}
+              aria-pressed={autosave}
+              title={
+                autosave
+                  ? 'Autoguardado activo: los marcajes se guardan solos tras 1.5 s sin editar. Clic para desactivar.'
+                  : 'Autoguardado desactivado: hay que pulsar «Guardar Marcajes del Día». Clic para activarlo.'
+              }
+              className={`flex items-center gap-2.5 pl-3 pr-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                autosave
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 shadow-lg shadow-emerald-500/10'
+                  : 'bg-slate-800/70 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-700/70'
+              }`}
+            >
+              <span className="hidden sm:flex flex-col items-start leading-tight">
+                <span className="text-xs sm:text-sm font-bold flex items-center gap-1.5">
+                  <Timer size={15} className={autosave ? 'text-emerald-400' : 'text-slate-500'} />
+                  Autoguardado
+                </span>
+                <span className={`text-[10px] font-medium ${
+                  autosave ? 'text-emerald-400/80' : 'text-slate-500'
+                }`}>
+                  {autosaveStatusText}
+                </span>
+              </span>
+              <span className={`relative w-9 h-5 shrink-0 rounded-full transition-colors ${
+                autosave ? 'bg-emerald-500' : 'bg-slate-700'
+              }`}>
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${
+                  autosave ? 'left-4.5' : 'left-0.5'
+                }`} />
+              </span>
+            </button>
+
             <button
               onClick={handleSaveAll}
               disabled={saving}
