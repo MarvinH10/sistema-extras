@@ -40,8 +40,8 @@ class CalculoHorasExtraServiceTest extends TestCase
 
     public function test_turno_compartido_hermosilla(): void
     {
-        // Mañana: 09:00 a 13:04 (tope 13:00 = 240 min). Tarde: 18:01 a 22:05 (244 min). Total: 484 min (+4 min extras).
-        $res = $this->service->calcular(null, '2026-08-01', '09:00', '13:04', '18:01', '22:05');
+        // Mañana: 10:00 a 13:00 (tope 13:00 = 180 min). Tarde: 16:31 a 21:35 (304 min). Total: 484 min (+4 min extras).
+        $res = $this->service->calcular(null, '2026-08-01', '10:00', '13:04', '16:31', '21:35');
 
         $this->assertEquals('COMPARTIDO', $res['turno_detectado']);
         $this->assertFalse($res['incompleto']);
@@ -49,9 +49,21 @@ class CalculoHorasExtraServiceTest extends TestCase
         $this->assertEquals(4, $res['minutos_extra']);
     }
 
+    public function test_turno_compartido_jornada_exacta(): void
+    {
+        // Llega 09:50 (antes de la base) => computa 10:00. Salida break 13:30 => tope 13:00 (180 min).
+        // Regreso 16:20 (antes de la base) => computa 16:30. Salida 21:30 => tope 21:30 (300 min). Total: 480 (0 extras).
+        $res = $this->service->calcular(null, '2026-08-01', '09:50', '13:30', '16:20', '21:30');
+
+        $this->assertEquals('COMPARTIDO', $res['turno_detectado']);
+        $this->assertFalse($res['incompleto']);
+        $this->assertEquals(480, $res['minutos_trabajados']);
+        $this->assertEquals(0, $res['minutos_extra']);
+    }
+
     public function test_auto_deteccion_part_time_4_horas(): void
     {
-        $res = $this->service->calcular(null, '2026-08-01', '09:00', null, null, '13:10');
+        $res = $this->service->calcular(null, '2026-08-01', '10:00', null, null, '14:10');
 
         $this->assertEquals('PART_TIME', $res['turno_detectado']);
         $this->assertFalse($res['incompleto']);
@@ -61,11 +73,12 @@ class CalculoHorasExtraServiceTest extends TestCase
 
     public function test_auto_deteccion_turno_todo_el_dia(): void
     {
-        $res = $this->service->calcular(null, '2026-08-01', '09:00', '14:00', '15:00', '22:45');
+        // Base 10:00. Mañana 10:00 a 14:00 (240 min). Break 1h. Tarde 15:00 a 22:45 (465 min). Total 705 (+225).
+        $res = $this->service->calcular(null, '2026-08-01', '10:00', '14:00', '15:00', '22:45');
 
         $this->assertEquals('TODO_EL_DIA', $res['turno_detectado']);
         $this->assertFalse($res['incompleto']);
-        $this->assertEquals(765, $res['minutos_trabajados']);
-        $this->assertEquals(285, $res['minutos_extra']);
+        $this->assertEquals(705, $res['minutos_trabajados']);
+        $this->assertEquals(225, $res['minutos_extra']);
     }
 }

@@ -10,6 +10,11 @@ class CalculoHorasExtraService
     public const JORNADA_MINUTOS = 480; // 8 horas = 480 minutos
     public const JORNADA_PART_TIME_MINUTOS = 240; // 4 horas = 240 minutos
 
+    public const ENTRADA_BASE_MANANA = '10:00'; // Inicio de jornada en la mañana
+    public const SALIDA_BASE_MANANA = '13:00'; // Corte de la mañana (fin del refrigerio)
+    public const RETORNO_BASE_TARDE = '16:30'; // Regreso base tras el break
+    public const SALIDA_BASE_TARDE = '21:30'; // Salida base de la tarde
+
     /**
      * Detecta automáticamente el tipo de turno basado en los horarios de marcaje.
      *
@@ -56,8 +61,8 @@ class CalculoHorasExtraService
             return 'TARDE';
         }
 
-        // Si ingresa en la mañana (ej. 08:45, 09:00, 09:15)
-        // Analizamos la duración del descanso (break) para distinguir COMPARTIDO (5h) de TODO_EL_DIA (1h)
+        // Si ingresa en la mañana (ej. 09:50, 10:00, 10:15)
+        // Analizamos la duración del descanso (break) para distinguir COMPARTIDO (210 min) de TODO_EL_DIA (60 min)
         if (!empty($s1) && !empty($i2)) {
             $s1Str = is_string($s1) ? $s1 : $s1->format('H:i');
             $i2Str = is_string($i2) ? $i2 : $i2->format('H:i');
@@ -74,8 +79,8 @@ class CalculoHorasExtraService
 
             $duracionBreak = $i2Total - $s1Total;
 
-            // Si el break es >= 3 horas (180 min, típicamente 5 horas / 300 min) => COMPARTIDO
-            if ($duracionBreak >= 180) {
+            // Si el break es largo (>= 2 horas / 120 min; COMPARTIDO usa ~210 min) => COMPARTIDO
+            if ($duracionBreak >= 120) {
                 return 'COMPARTIDO';
             }
 
@@ -262,10 +267,10 @@ class CalculoHorasExtraService
         if (!$turno) {
             $turno = new Turno([
                 'nombre' => $tipoNombre,
-                'entrada_base' => $tipoNombre === 'TARDE' ? '13:00' : '09:00',
+                'entrada_base' => $tipoNombre === 'TARDE' ? '13:00' : self::ENTRADA_BASE_MANANA,
                 'salida_base' => '22:00',
                 'break_tipo' => $tipoNombre === 'COMPARTIDO' ? 'ventana' : 'fijo',
-                'break_minutos' => $tipoNombre === 'COMPARTIDO' ? 300 : 60,
+                'break_minutos' => $tipoNombre === 'COMPARTIDO' ? 210 : 60,
             ]);
         }
 
@@ -353,10 +358,10 @@ class CalculoHorasExtraService
     }
 
     /**
-     * Lógica para Turno COMPARTIDO (09:00 a 13:00 y 18:00 a 22:00).
-     * - Mañana: Base 09:00 a 13:00 (tope 13:00 para descanso, 240 min).
-     * - Tarde: Base 18:00 a 22:00. Si regresa > 18:00 (ej. 18:01), se descuenta tardanza.
-     *   Las horas extras se computan a partir de las 22:00 (ej. salida 22:05 = +5m - 1m demora = +4 min).
+     * Lógica para Turno COMPARTIDO (10:00 a 13:00 y 16:30 a 21:30).
+     * - Mañana: Base 10:00 a 13:00 (tope 13:00 para corte de refrigerio, 180 min).
+     * - Tarde: Base 16:30 a 21:30. Si regresa > 16:30 (ej. 16:31), se descuenta tardanza.
+     *   Las horas extras se computan a partir de las 21:30 (ej. salida 21:35 = +5m - 1m demora = +4 min).
      */
     private function calcularTurnoCompartido(
         Turno $turno,
@@ -366,21 +371,23 @@ class CalculoHorasExtraService
         Carbon $i2,
         Carbon $s2
     ): array {
-        $entradaBaseMañana = Carbon::parse("$fecha {$turno->entrada_base}"); // 09:00
-        $salidaBaseMañana = Carbon::parse("$fecha 13:00");                   // 13:00
-        $retornoBaseTarde = Carbon::parse("$fecha 18:00");                   // 18:00
+        $entradaBaseMañana = Carbon::parse("$fecha {$turno->entrada_base}");
+        $salidaBaseMañana = Carbon::parse("$fecha " . self::SALIDA_BASE_MANANA);
+        $retornoBaseTarde = Carbon::parse("$fecha " . self::RETORNO_BASE_TARDE);
+        $salidaBaseTarde = Carbon::parse("$fecha " . self::SALIDA_BASE_TARDE);
 
         // 1. Sesión Mañana:
-        // Ingreso efectivo (si llega <= 09:00 => 09:00, si llega > 09:00 => real)
+        // Ingreso efectivo (si llega <= 10:00 => 10:00, si llega > 10:00 => real)
         $ingresoEfectivo = $i1->lte($entradaBaseMañana) ? $entradaBaseMañana->copy() : $i1->copy();
         // Salida efectiva mañana (tope a las 13:00 para corte de refrigerio; si sale antes => real)
         $salidaEfectiva1 = $s1->gte($salidaBaseMañana) ? $salidaBaseMañana->copy() : $s1->copy();
         $sesion1 = max(0, (int) $ingresoEfectivo->diffInMinutes($salidaEfectiva1, false));
 
         // 2. Sesión Tarde:
-        // Retorno efectivo (si regresa <= 18:00 => 18:00, si regresa > 18:00 ej. 18:01 => real con descuento)
+        // Retorno efectivo (si regresa <= 16:30 => 16:30, si regresa > 16:30 ej. 16:31 => real con descuento)
         $regresoEfectivo = $i2->lte($retornoBaseTarde) ? $retornoBaseTarde->copy() : $i2->copy();
-        $salidaEfectiva2 = $s2->copy();
+        // Salida efectiva: si sale antes de la base 21:30 se topa a la base, si sale después => real (extras)
+        $salidaEfectiva2 = $s2->lte($salidaBaseTarde) ? $salidaBaseTarde->copy() : $s2->copy();
         $sesion2 = max(0, (int) $regresoEfectivo->diffInMinutes($salidaEfectiva2, false));
 
         $minutosTrabajados = $sesion1 + $sesion2;
@@ -396,8 +403,9 @@ class CalculoHorasExtraService
                 'ingreso_efectivo' => $ingresoEfectivo->format('H:i'),
                 'salida_break' => $s1->format('H:i'),
                 'salida_efectiva_manana' => $salidaEfectiva1->format('H:i'),
-                'regreso_base' => '18:00',
+                'regreso_base' => self::RETORNO_BASE_TARDE,
                 'regreso_efectivo' => $regresoEfectivo->format('H:i'),
+                'salida_base_tarde' => self::SALIDA_BASE_TARDE,
                 'salida_efectiva' => $salidaEfectiva2->format('H:i'),
                 'minutos_sesion_1' => $sesion1,
                 'minutos_sesion_2' => $sesion2,

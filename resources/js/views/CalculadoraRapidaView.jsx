@@ -64,11 +64,11 @@ export default function CalculadoraRapidaView() {
     } else if (preset === 'compartido_5h') {
       const t = turnos.find(x => x.nombre === 'COMPARTIDO');
       if (t) setSelectedTurnoId(t.id);
-      setIngreso1('08:50'); setSalida1('13:30'); setIngreso2('18:20'); setSalida2('22:30'); setEsDescanso(false);
+      setIngreso1('09:50'); setSalida1('13:30'); setIngreso2('16:20'); setSalida2('21:45'); setEsDescanso(false);
     } else if (preset === 'todo_el_dia') {
       const t = turnos.find(x => x.nombre === 'TODO_EL_DIA');
       if (t) setSelectedTurnoId(t.id);
-      setIngreso1('09:00'); setSalida1('14:00'); setIngreso2('15:00'); setSalida2('22:45'); setEsDescanso(false);
+      setIngreso1('10:00'); setSalida1('14:00'); setIngreso2('15:00'); setSalida2('22:45'); setEsDescanso(false);
     }
   };
 
@@ -108,13 +108,13 @@ export default function CalculadoraRapidaView() {
           onClick={() => setPreset('compartido_5h')}
           className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs rounded-lg border border-slate-700 transition"
         >
-          Compartido: Break 5h + Extras (+30m)
+          Compartido: Break 3h30 + Extras (+15m)
         </button>
         <button
           onClick={() => setPreset('todo_el_dia')}
           className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs rounded-lg border border-slate-700 transition"
         >
-          Todo el Día: 09:00 a 22:45 (+285m)
+          Todo el Día: 10:00 a 22:45 (+225m)
         </button>
       </div>
 

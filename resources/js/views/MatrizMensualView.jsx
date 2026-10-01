@@ -166,7 +166,7 @@ export default function MatrizMensualView() {
       let durBreak = i2Min - s1Min;
       if (durBreak < 0) durBreak += 24 * 60;
 
-      if (durBreak >= 180) {
+      if (durBreak >= 120) {
         return 'COMPARTIDO';
       }
       return 'TODO_EL_DIA';
@@ -307,18 +307,35 @@ export default function MatrizMensualView() {
         };
       }
 
-      const ebH = turnoDetectado === 'TARDE' ? 13 : 9;
+      const ebH = turnoDetectado === 'TARDE' ? 13 : 10;
       const ebTotal = ebH * 60;
-      const breakMin = turnoDetectado === 'COMPARTIDO' ? 300 : 60;
 
       if (s2Total < i2Total) s2Total += 24 * 60;
 
-      const ingresoEfectivo = i1Total <= ebTotal ? ebTotal : i1Total;
-      const regresoMinimo = s1Total + breakMin;
-      const regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
+      let sesion1;
+      let sesion2;
 
-      const sesion1 = Math.max(0, s1Total - ingresoEfectivo);
-      const sesion2 = Math.max(0, s2Total - regresoEfectivo);
+      if (turnoDetectado === 'COMPARTIDO') {
+        // Mañana: Base 10:00 a 13:00 (tope 13:00 = 180 min)
+        const ingresoEfectivo = i1Total <= ebTotal ? ebTotal : i1Total;
+        const salidaEfectivaManana = s1Total >= 13 * 60 ? 13 * 60 : s1Total;
+        sesion1 = Math.max(0, salidaEfectivaManana - ingresoEfectivo);
+
+        // Tarde: Base 16:30 a 21:30
+        const baseTarde = 16 * 60 + 30;
+        const baseSalidaTarde = 21 * 60 + 30;
+        const regresoEfectivo = i2Total <= baseTarde ? baseTarde : i2Total;
+        const salidaEfectivaTarde = s2Total <= baseSalidaTarde ? baseSalidaTarde : s2Total;
+        sesion2 = Math.max(0, salidaEfectivaTarde - regresoEfectivo);
+      } else {
+        const breakMin = 60;
+        const ingresoEfectivo = i1Total <= ebTotal ? ebTotal : i1Total;
+        const regresoMinimo = s1Total + breakMin;
+        const regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
+
+        sesion1 = Math.max(0, s1Total - ingresoEfectivo);
+        sesion2 = Math.max(0, s2Total - regresoEfectivo);
+      }
 
       const totalTrabajados = sesion1 + sesion2;
       const totalExtras = totalTrabajados - 480;
@@ -762,8 +779,8 @@ export default function MatrizMensualView() {
                 >
                   <option value="AUTO" className="bg-slate-900 text-slate-200">Auto ({selectedCell.calcTurno === 'SIN_RESTRICCIONES' ? 'Sin Restr.' : (selectedCell.calcTurno || 'TARDE')})</option>
                   <option value="TARDE" className="bg-slate-900 text-blue-300">TARDE (13:00 - 22:00)</option>
-                  <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">COMPARTIDO (09:00 - 22:00)</option>
-                  <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">TODO EL DÍA (09:00 - 22:00)</option>
+                  <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">COMPARTIDO (10:00 - 21:30)</option>
+                  <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">TODO EL DÍA (10:00 - 22:00)</option>
                   <option value="PART_TIME" className="bg-slate-900 text-cyan-300 font-bold">PART TIME (4 Horas)</option>
                   <option value="SIN_RESTRICCIONES" className="bg-slate-900 text-amber-300 font-bold">⚡ SIN RESTRICCIONES (Hora Real)</option>
                 </select>

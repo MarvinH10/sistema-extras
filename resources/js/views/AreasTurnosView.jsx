@@ -82,21 +82,21 @@ export default function AreasTurnosView() {
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
                   TURNO COMPARTIDO
                 </span>
-                <span className="text-xs font-mono text-slate-400">09:00 - 22:00</span>
+                <span className="text-xs font-mono text-slate-400">10:00 - 21:30</span>
               </div>
               
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-purple-400 shrink-0 mt-0.5" />
-                  <span><strong>Mañana (09:00 a 13:00):</strong> Entrada base 09:00. Salida break con corte base a las 13:00 (240 min).</span>
+                  <span><strong>Mañana (10:00 a 13:00):</strong> Entrada base 10:00. Salida break con corte base a las 13:00 (180 min).</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Retorno Break (Base 18:00):</strong> Si vuelve &le; 18:00 cuenta desde 18:00. Si vuelve después (ej. 18:01), se descuenta tardanza.</span>
+                  <span><strong>Retorno Break (Base 16:30):</strong> Si vuelve &le; 16:30 cuenta desde 16:30. Si vuelve después (ej. 16:31), se descuenta tardanza.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />
-                  <span><strong>Salida:</strong> Base 22:00. Minutos extras menos minutos de demora = extras finales.</span>
+                  <span><strong>Salida:</strong> Base 21:30. Lo que pase de las 21:30 suma extras directos.</span>
                 </li>
               </ul>
             </div>
@@ -115,17 +115,17 @@ export default function AreasTurnosView() {
                 <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   TODO EL DÍA
                 </span>
-                <span className="text-xs font-mono text-slate-400">09:00 - 22:00</span>
+                <span className="text-xs font-mono text-slate-400">10:00 - 22:00</span>
               </div>
               
               <ul className="space-y-2.5 text-xs text-slate-300">
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Ingreso:</strong> Si llega &le; 09:00 computa <strong>09:00</strong>. Si llega después, se computa hora real.</span>
+                  <span><strong>Ingreso:</strong> Si llega &le; 10:00 computa <strong>10:00</strong>. Si llega después, se computa hora real.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Coffee size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <span><strong>Break Fijo (1 Hora):</strong> 60 minutos obligatorios desde Salida 1.</span>
+                  <span><strong>Break Fijo (1 Hora):</strong> Puede salir a cualquier hora, pero debe cumplir 60 min.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <ShieldCheck size={14} className="text-emerald-400 shrink-0 mt-0.5" />

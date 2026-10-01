@@ -47,11 +47,11 @@ class RegistroDiarioSeeder extends Seeder
                     // Turno TARDE con tardanza y déficit (-20 min)
                     $i1 = '13:05'; $s1 = '17:00'; $i2 = '18:15'; $s2 = '22:00';
                 } elseif ($randomCase === 2) {
-                    // Turno COMPARTIDO exacto (0 min)
-                    $i1 = '08:50'; $s1 = '13:30'; $i2 = '18:30'; $s2 = '22:00';
+                    // Turno COMPARTIDO exacto (0 min): 10:00 a 13:00 + 16:30 a 21:30
+                    $i1 = '09:50'; $s1 = '13:30'; $i2 = '16:30'; $s2 = '21:30';
                 } else {
-                    // Turno TODO EL DIA con extras (+45 min)
-                    $i1 = '09:00'; $s1 = '14:00'; $i2 = '15:00'; $s2 = '22:45';
+                    // Turno TODO EL DIA con extras (+45 min): base 10:00, break 1h
+                    $i1 = '10:00'; $s1 = '14:00'; $i2 = '15:00'; $s2 = '22:45';
                 }
 
                 $calculo = $service->calcular(

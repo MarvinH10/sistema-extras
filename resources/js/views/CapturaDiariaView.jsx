@@ -192,7 +192,7 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       let durBreak = i2Min - s1Min;
       if (durBreak < 0) durBreak += 24 * 60;
 
-      if (durBreak >= 180) {
+      if (durBreak >= 120) {
         return 'COMPARTIDO';
       }
       return 'TODO_EL_DIA';
@@ -348,14 +348,15 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
       let sesion2 = 0;
 
       if (turnoDetectado === 'COMPARTIDO') {
-        // Mañana: Base 09:00 a 13:00 (tope 13:00 para corte de refrigerio)
-        ingresoEfectivo = i1Total <= 9 * 60 ? 9 * 60 : i1Total;
+        // Mañana: Base 10:00 a 13:00 (tope 13:00 para corte de refrigerio = 180 min)
+        ingresoEfectivo = i1Total <= 10 * 60 ? 10 * 60 : i1Total;
         const salidaEfectivaMañana = s1Total >= 13 * 60 ? 13 * 60 : s1Total;
         sesion1 = Math.max(0, salidaEfectivaMañana - ingresoEfectivo);
 
-        // Tarde: Base 18:00 a 22:00 (si regresa 18:01 cuenta desde 18:01 descontando tardanza)
-        regresoEfectivo = i2Total <= 18 * 60 ? 18 * 60 : i2Total;
-        sesion2 = Math.max(0, s2Total - regresoEfectivo);
+        // Tarde: Base 16:30 a 21:30 (si regresa 16:31 cuenta desde 16:31 descontando tardanza)
+        regresoEfectivo = i2Total <= 16 * 60 + 30 ? 16 * 60 + 30 : i2Total;
+        const salidaEfectivaTarde = s2Total <= 21 * 60 + 30 ? 21 * 60 + 30 : s2Total;
+        sesion2 = Math.max(0, salidaEfectivaTarde - regresoEfectivo);
       } else if (turnoDetectado === 'TARDE') {
         // Base 13:00, break 1h desde salida
         ingresoEfectivo = i1Total <= 13 * 60 ? 13 * 60 : i1Total;
@@ -364,8 +365,8 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
         sesion1 = Math.max(0, s1Total - ingresoEfectivo);
         sesion2 = Math.max(0, s2Total - regresoEfectivo);
       } else {
-        // TODO_EL_DIA: Base 09:00, break 1h desde salida
-        ingresoEfectivo = i1Total <= 9 * 60 ? 9 * 60 : i1Total;
+        // TODO_EL_DIA: Base 10:00, break 1h desde salida
+        ingresoEfectivo = i1Total <= 10 * 60 ? 10 * 60 : i1Total;
         const regresoMinimo = s1Total + 60;
         regresoEfectivo = i2Total < regresoMinimo ? regresoMinimo : i2Total;
         sesion1 = Math.max(0, s1Total - ingresoEfectivo);
@@ -433,9 +434,9 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
   const handleApplyPreset = (empId, tipo) => {
     let i1 = '13:00', s1 = '17:00', i2 = '18:00', s2 = '22:00';
     if (tipo === 'COMPARTIDO') {
-      i1 = '09:00'; s1 = '13:30'; i2 = '18:30'; s2 = '22:00';
+      i1 = '10:00'; s1 = '13:30'; i2 = '16:30'; s2 = '21:30';
     } else if (tipo === 'TODO_EL_DIA') {
-      i1 = '09:00'; s1 = '14:00'; i2 = '15:00'; s2 = '22:00';
+      i1 = '10:00'; s1 = '14:00'; i2 = '15:00'; s2 = '22:00';
     } else if (tipo === 'PART_TIME') {
       i1 = '14:00'; s1 = ''; i2 = ''; s2 = '18:00';
     }
@@ -937,8 +938,8 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
                                   Auto ({turnoName === 'SIN_RESTRICCIONES' ? 'Sin Restr.' : turnoName})
                                 </option>
                                 <option value="TARDE" className="bg-slate-900 text-blue-300">TARDE (13:00-22:00)</option>
-                                <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">COMPARTIDO (09:00-22:00)</option>
-                                <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">TODO EL DÍA (09:00-22:00)</option>
+                                <option value="COMPARTIDO" className="bg-slate-900 text-purple-300">COMPARTIDO (10:00-21:30)</option>
+                                <option value="TODO_EL_DIA" className="bg-slate-900 text-emerald-300">TODO EL DÍA (10:00-22:00)</option>
                                 <option value="PART_TIME" className="bg-slate-900 text-cyan-300">PART TIME (4 Horas)</option>
                                 <option value="SIN_RESTRICCIONES" className="bg-slate-900 text-amber-300 font-bold">⚡ SIN RESTRICCIONES (Hora Real)</option>
                               </select>
@@ -1075,7 +1076,7 @@ export default function CapturaDiariaView({ onNavigateToMatriz }) {
                                 <button
                                   type="button"
                                   onClick={() => handleApplyPreset(emp.id, 'COMPARTIDO')}
-                                  title="Llenar Compartido (09:00-22:00, 5h break)"
+                                  title="Llenar Compartido (10:00-21:30, 3h30 break)"
                                   className="px-1.5 py-1 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition"
                                 >
                                   Comp.
