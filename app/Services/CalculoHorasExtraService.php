@@ -43,12 +43,34 @@ class CalculoHorasExtraService
     }
 
     /**
+     * Normaliza una hora a HH:MM.
+     *
+     * Las columnas TIME de MySQL/MariaDB se devuelven como "10:00:00", mientras
+     * que en SQLite el valor queda como "10:00". Sin normalizar, la comparación
+     * con las constantes de este servicio fallaba en producción y el cambio de
+     * horario del 2026-10-01 no se aplicaba a las fechas anteriores.
+     */
+    private function normalizarHora(?string $hora): string
+    {
+        $hora = trim((string) $hora);
+
+        if ($hora === '') {
+            return '';
+        }
+
+        return strlen($hora) >= 5 ? substr($hora, 0, 5) : $hora;
+    }
+
+    /**
      * Resuelve la hora de entrada base de un turno según la fecha del registro.
      * Antes del cambio, los turnos de mañana ingressaban 09:00.
      */
     private function entradaBaseEfectiva(Turno $turno, string $fecha): string
     {
-        if (!$this->esFechaHorarioNuevo($fecha) && $turno->entrada_base === self::ENTRADA_BASE_MANANA) {
+        if (
+            !$this->esFechaHorarioNuevo($fecha)
+            && $this->normalizarHora($turno->entrada_base) === self::ENTRADA_BASE_MANANA
+        ) {
             return self::LEG_ENTRADA_BASE_MANANA;
         }
 
